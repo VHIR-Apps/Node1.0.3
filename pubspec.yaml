@@ -1,0 +1,140 @@
+name: habitnode
+description: Habit Node - Track your daily habits easily
+publish_to: 'none'
+version: 1.0.2+2
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # ════════════════════════════════════════
+  # CORE UI & DESIGN
+  # ════════════════════════════════════════
+  cupertino_icons: ^1.0.8
+  google_fonts: ^6.3.3
+  flutter_svg: ^2.0.10+1
+  glassmorphism: ^3.0.0
+  shimmer: ^3.0.0
+
+  # ════════════════════════════════════════
+  # LOCAL DATABASE
+  # ════════════════════════════════════════
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+
+  # ════════════════════════════════════════
+  # UTILITIES
+  # ════════════════════════════════════════
+  path_provider: ^2.1.3
+  intl: ^0.20.2
+  shared_preferences: ^2.2.3
+  http: ^1.2.1
+  device_info_plus: ^10.1.0
+  package_info_plus: ^8.0.0
+  connectivity_plus: ^6.0.3
+  uuid: ^4.0.0
+  permission_handler: ^11.3.1
+  # ════════════════════════════════════════
+  # GOOGLE DRIVE CLOUD BACKUP (NO LOCAL STORAGE)
+  # ════════════════════════════════════════
+  google_sign_in: ^6.2.1
+  googleapis: ^13.2.0
+
+  # ════════════════════════════════════════
+  # CHARTS & GRAPHS
+  # ════════════════════════════════════════
+  fl_chart: ^0.68.0
+
+  # ════════════════════════════════════════
+  # PURCHASE & ADS
+  # ════════════════════════════════════════
+  in_app_purchase: ^3.2.0
+  in_app_purchase_android: ^0.3.0+19
+  in_app_purchase_storekit: ^0.3.8+1
+  google_mobile_ads: ^5.1.0
+  unity_ads_plugin: ^0.3.23
+
+  # ════════════════════════════════════════
+  # NOTIFICATIONS
+  # ════════════════════════════════════════
+  flutter_local_notifications: ^17.2.4
+  timezone: ^0.9.4
+  android_alarm_manager_plus: ^4.0.3
+
+  # ════════════════════════════════════════
+  # FILE & SHARING
+  # ════════════════════════════════════════
+  url_launcher: ^6.3.0
+  share_plus: ^10.0.0
+  file_picker: ^8.0.7
+
+  # ════════════════════════════════════════
+  # AUDIO & TTS
+  # ════════════════════════════════════════
+  audioplayers: ^6.1.0
+  flutter_tts: ^4.0.2
+
+  # ════════════════════════════════════════
+  # TUTORIAL & ONBOARDING
+  # ════════════════════════════════════════
+  tutorial_coach_mark: ^1.2.11
+
+  # ════════════════════════════════════════
+  # FIREBASE (Auth, Firestore, Messaging)
+  # ════════════════════════════════════════
+  firebase_core: ^3.3.0
+  firebase_auth: ^5.1.4
+  cloud_firestore: ^5.2.1
+  firebase_messaging: ^15.0.4
+
+  # ════════════════════════════════════════
+  # BACKGROUND SERVICE & WAKELOCK
+  # ════════════════════════════════════════
+  wakelock_plus: ^1.2.8
+  flutter_background_service: ^5.0.10
+  flutter_background_service_android: ^6.2.4
+
+  # ════════════════════════════════════════
+  # SPLASH SCREEN
+  # ════════════════════════════════════════
+  flutter_native_splash: ^2.4.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  # ════════════════════════════════════════
+  # CODE GENERATION
+  # ════════════════════════════════════════
+  hive_generator: ^2.0.1
+  build_runner: ^2.4.13
+
+  # ════════════════════════════════════════
+  # LINTING & ICONS
+  # ════════════════════════════════════════
+  flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.1
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/
+    - assets/sounds/
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/logo.png"
+  min_sdk_android: 21
+  remove_alpha_ios: true
+
+flutter_native_splash:
+  color: "#000000"
+  image: assets/images/logovhir.png
+  android_12:
+    color: "#000000"
+    image: assets/images/logovhir.png

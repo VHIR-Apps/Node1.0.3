@@ -1,0 +1,229 @@
+plugins {
+    id "com.android.application"
+    id "kotlin-android"
+    id "dev.flutter.flutter-gradle-plugin"
+    id "com.google.gms.google-services"
+}
+
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file('local.properties')
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withReader('UTF-8') { reader ->
+        localProperties.load(reader)
+    }
+}
+
+static String _readRawProperty(File f, String key) {
+    if (f == null || !f.exists()) return null
+    def lines = f.readLines('UTF-8')
+    for (def line : lines) {
+        def t = (line ?: '').trim()
+        if (t.isEmpty()) continue
+        if (t.startsWith('#') || t.startsWith('!')) continue
+        int idx = t.indexOf('=')
+        if (idx <= 0) continue
+        def k = t.substring(0, idx).trim()
+        if (k != key) continue
+        def v = t.substring(idx + 1).trim()
+        return v.isEmpty() ? null : v
+    }
+    return null
+}
+
+static boolean _isLikelyCorruptedWindowsPath(String p) {
+    if (p == null) return false
+    if (!(p ==~ /^[A-Za-z]:.*/)) return false
+    return !p.contains('\\') && !p.contains('/')
+}
+
+static String _normalizePath(String p) {
+    if (p == null) return null
+    return p.replace('\\', '/').trim()
+}
+
+def keyProperties = new Properties()
+
+def keyPropertiesFileCandidates = [
+        rootProject.file('key.properties'),
+        project.file('key.properties'),
+]
+
+File resolvedKeyPropsFile = null
+for (def f : keyPropertiesFileCandidates) {
+    if (f != null && f.exists()) {
+        resolvedKeyPropsFile = f
+        break
+    }
+}
+
+if (resolvedKeyPropsFile != null && resolvedKeyPropsFile.exists()) {
+    resolvedKeyPropsFile.withReader('UTF-8') { reader ->
+        keyProperties.load(reader)
+    }
+}
+
+def flutterVersionCode = localProperties.getProperty('flutter.versionCode')
+if (flutterVersionCode == null) {
+    flutterVersionCode = '2'
+}
+
+def flutterVersionName = localProperties.getProperty('flutter.versionName')
+if (flutterVersionName == null) {
+    flutterVersionName = '1.0.1'
+}
+
+def _isReleaseTaskRequested() {
+    def names = gradle.startParameter.taskNames ?: []
+    if (names.isEmpty()) return false
+    return names.any { n -> (n ?: '').toLowerCase().contains('release') }
+}
+
+android {
+    namespace "com.habit.node"
+    compileSdk 36
+    ndkVersion flutter.ndkVersion
+
+    signingConfigs {
+        release {
+            def storeFileRaw = null
+            if (resolvedKeyPropsFile != null && resolvedKeyPropsFile.exists()) {
+                storeFileRaw = _readRawProperty(resolvedKeyPropsFile, 'storeFile')
+            }
+
+            def storeFileFromProps = keyProperties.getProperty('storeFile')
+            def storeFileValue = storeFileRaw ?: storeFileFromProps
+
+            if (_isLikelyCorruptedWindowsPath(storeFileValue) && storeFileRaw != null) {
+                storeFileValue = storeFileRaw
+            }
+
+            def storePasswordValue = keyProperties.getProperty('storePassword') ?:
+                    System.getenv('HABITNODE_STORE_PASSWORD')
+            def keyAliasValue = keyProperties.getProperty('keyAlias') ?:
+                    System.getenv('HABITNODE_KEY_ALIAS')
+            def keyPasswordValue = keyProperties.getProperty('keyPassword') ?:
+                    System.getenv('HABITNODE_KEY_PASSWORD')
+
+            def normalizedStoreFile = _normalizePath(storeFileValue)
+
+            if (_isReleaseTaskRequested()) {
+                if (resolvedKeyPropsFile == null) {
+                    throw new GradleException(
+                            "Release signing failed: key.properties not found.\n" +
+                                    "Create one of these files:\n" +
+                                    " - android/key.properties\n" +
+                                    " - android/app/key.properties\n" +
+                                    "And include:\n" +
+                                    " storeFile=D:/path/to/your.jks\n" +
+                                    " storePassword=******\n" +
+                                    " keyAlias=******\n" +
+                                    " keyPassword=******"
+                    )
+                }
+
+                if (normalizedStoreFile == null || normalizedStoreFile.trim().isEmpty()) {
+                    throw new GradleException(
+                            "Release signing failed: 'storeFile' is missing in " +
+                                    "${resolvedKeyPropsFile}."
+                    )
+                }
+
+                def ksFile = file(normalizedStoreFile)
+                if (!ksFile.exists()) {
+                    throw new GradleException(
+                            "Release signing failed: keystore file not found.\n" +
+                                    "Resolved path: ${ksFile.absolutePath}"
+                    )
+                }
+
+                if (storePasswordValue == null || storePasswordValue.trim().isEmpty()) {
+                    throw new GradleException(
+                            "Release signing failed: 'storePassword' is missing."
+                    )
+                }
+                if (keyAliasValue == null || keyAliasValue.trim().isEmpty()) {
+                    throw new GradleException(
+                            "Release signing failed: 'keyAlias' is missing."
+                    )
+                }
+                if (keyPasswordValue == null || keyPasswordValue.trim().isEmpty()) {
+                    throw new GradleException(
+                            "Release signing failed: 'keyPassword' is missing."
+                    )
+                }
+
+                storeFile file(normalizedStoreFile)
+                storePassword storePasswordValue
+                keyAlias keyAliasValue
+                keyPassword keyPasswordValue
+            } else {
+                if (normalizedStoreFile != null && !normalizedStoreFile.trim().isEmpty()) {
+                    def ksFile = file(normalizedStoreFile)
+                    if (ksFile.exists()) {
+                        storeFile ksFile
+                    }
+                }
+                if (storePasswordValue != null) storePassword storePasswordValue
+                if (keyAliasValue != null) keyAlias keyAliasValue
+                if (keyPasswordValue != null) keyPassword keyPasswordValue
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+        coreLibraryDesugaringEnabled true
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
+    defaultConfig {
+        applicationId "com.habit.node"
+        minSdkVersion flutter.minSdkVersion
+        targetSdk 34
+        versionCode flutterVersionCode.toInteger()
+        versionName flutterVersionName
+        multiDexEnabled true
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled false
+            shrinkResources false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'),
+                    'proguard-rules.pro'
+        }
+
+        debug {
+        }
+    }
+}
+
+flutter {
+    source "../.."
+}
+
+dependencies {
+    constraints {
+        implementation('androidx.core:core') {
+            version { strictly '1.13.1' }
+        }
+        implementation('androidx.core:core-ktx') {
+            version { strictly '1.13.1' }
+        }
+        implementation('androidx.browser:browser') {
+            version { strictly '1.8.0' }
+        }
+    }
+
+    implementation "com.google.android.gms:play-services-auth:21.2.0"
+    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.0.4"
+
+    // ✅ Required for AlarmActivity (native Android UI)
+    implementation "androidx.appcompat:appcompat:1.7.0"
+    implementation "androidx.core:core-ktx:1.13.1"
+}

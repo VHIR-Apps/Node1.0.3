@@ -1,0 +1,193 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.habit.node">
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!-- 🌐 NETWORK PERMISSIONS                                  -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!-- 🔔 NOTIFICATION PERMISSIONS                             -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!-- ⏰ ALARM PERMISSIONS (Google Policy Compliant)           -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+
+    <!-- ✅ Full screen intent - habit/alarm app এর জন্য Google allow করে -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+
+    <!-- ✅ Wake lock - alarm এর সময় screen on রাখার জন্য -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!-- 🎵 FOREGROUND SERVICE (Pomodoro/Music)                  -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!-- 💰 BILLING (In-App Purchase)                            -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <uses-permission android:name="com.android.vending.BILLING" />
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!-- 📁 STORAGE PERMISSIONS                                  -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!-- ⚠️ REMOVED PERMISSIONS (Google Policy violation)         -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!--
+    ❌ SYSTEM_ALERT_WINDOW - Restricted, Habit app পায় না
+    ❌ DISABLE_KEYGUARD - Deprecated, Android 13+ এ কাজ করে না
+    ❌ FOREGROUND_SERVICE_SPECIAL_USE - Android 14 সমস্যা
+    -->
+
+    <application
+        android:label="Habit Node"
+        android:name="${applicationName}"
+        android:icon="@mipmap/ic_launcher"
+        android:requestLegacyExternalStorage="true">
+
+        <!-- ═══════════════════════════════════════════════════ -->
+        <!-- 📱 GOOGLE ADS                                       -->
+        <!-- ═══════════════════════════════════════════════════ -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-3940256099942544~3347511713" />
+
+        <!-- ═══════════════════════════════════════════════════ -->
+        <!-- 🏠 MAIN ACTIVITY                                    -->
+        <!-- ═══════════════════════════════════════════════════ -->
+        <!--
+        ✅ showWhenLocked + turnScreenOn:
+           Full screen alarm এ lock screen এর উপর খুলবে
+        -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true">
+
+            <meta-data
+                android:name="io.flutter.embedding.android.NormalTheme"
+                android:resource="@style/NormalTheme" />
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- ═══════════════════════════════════════════════════ -->
+        <!-- 🔧 BACKGROUND SERVICE (Pomodoro Timer)              -->
+        <!-- ═══════════════════════════════════════════════════ -->
+        <!--
+        ✅ foregroundServiceType="dataSync" - Android 14 compatible
+        -->
+        <service
+            android:name="id.flutter.flutter_background_service.BackgroundService"
+            android:foregroundServiceType="dataSync"
+            android:exported="true" />
+
+        <receiver
+            android:name="id.flutter.flutter_background_service.WatchdogReceiver"
+            android:exported="true" />
+
+        <!-- ═══════════════════════════════════════════════════ -->
+        <!-- 🔔 FLUTTER LOCAL NOTIFICATIONS                      -->
+        <!-- ═══════════════════════════════════════════════════ -->
+        <!--
+        ✅ এই receivers automatically সব notifications handle করে:
+           - Scheduled notifications
+           - Boot completed (reschedule alarms)
+           - Full screen intents
+           - Action buttons (dismiss/snooze/mark_done/start_now)
+        -->
+        <receiver
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+
+        <!-- ═══════════════════════════════════════════════════ -->
+        <!-- 📂 FILE PROVIDER (for sharing files)                -->
+        <!-- ═══════════════════════════════════════════════════ -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <!-- ═══════════════════════════════════════════════════ -->
+        <!-- 🎨 FLUTTER EMBEDDING                                -->
+        <!-- ═══════════════════════════════════════════════════ -->
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+    </application>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!-- 🔍 QUERIES (Android 11+ package visibility)             -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <queries>
+        <!-- Text processing -->
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT" />
+            <data android:mimeType="text/plain" />
+        </intent>
+
+        <!-- URL handling -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="http" />
+        </intent>
+
+        <!-- Play Store -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="market" />
+        </intent>
+
+        <!-- Text-to-Speech -->
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+</manifest>

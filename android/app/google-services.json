@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "972762960500",
+    "project_id": "habit-flow-vr",
+    "storage_bucket": "habit-flow-vr.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:972762960500:android:d87fc6a3291d87bec33721",
+        "android_client_info": {
+          "package_name": "com.habit.node"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "972762960500-19icu92bbur13obce2oqhull22djq3ba.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.habit.node",
+            "certificate_hash": "2a722b23dd050d3a263a4856700c4cde96607358"
+          }
+        },
+        {
+          "client_id": "972762960500-h3lokl6fns3u0ar528mojrokh4p8u7l2.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.habit.node",
+            "certificate_hash": "0b452bd0defc041f73e53c7290a1efd674deec33"
+          }
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB2LqhAG7x5VYTCnB2bg8COrJHil8k0_vw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
