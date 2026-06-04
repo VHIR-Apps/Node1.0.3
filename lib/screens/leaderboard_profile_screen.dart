@@ -27,8 +27,7 @@ class LeaderboardProfileScreen extends StatefulWidget {
       _LeaderboardProfileScreenState();
 }
 
-class _LeaderboardProfileScreenState
-    extends State<LeaderboardProfileScreen>
+class _LeaderboardProfileScreenState extends State<LeaderboardProfileScreen>
     with TickerProviderStateMixin {
   bool _isEditMode = false;
 
@@ -217,8 +216,7 @@ class _LeaderboardProfileScreenState
       }
 
       _uid = user.uid;
-      final local =
-      DatabaseService.getLeaderboardProfileForUid(user.uid);
+      final local = DatabaseService.getLeaderboardProfileForUid(user.uid);
       _existing = local;
 
       if (local != null) {
@@ -226,23 +224,18 @@ class _LeaderboardProfileScreenState
       } else {
         final suggested = (user.displayName ?? '').trim();
         if (suggested.isNotEmpty) {
-          _nameC.text =
-              LeaderboardProfileModel.safeDisplayName(
-                  suggested);
+          _nameC.text = LeaderboardProfileModel.safeDisplayName(suggested);
         }
         _avatarIndex = 0;
         _emoji = _avatarOptions[0].emoji;
-        _joinedAtMs =
-            DateTime.now().toUtc().millisecondsSinceEpoch;
+        _joinedAtMs = DateTime.now().toUtc().millisecondsSinceEpoch;
 
         if (suggested.isNotEmpty) {
           await DatabaseService.setUserName(
-            LeaderboardProfileModel.safeDisplayName(
-                suggested),
+            LeaderboardProfileModel.safeDisplayName(suggested),
           );
         }
-        await DatabaseService.setUserAvatar(
-            _avatarOptions[0].emoji);
+        await DatabaseService.setUserAvatar(_avatarOptions[0].emoji);
 
         _isEditMode = true;
         _modeAnimController.forward();
@@ -295,9 +288,7 @@ class _LeaderboardProfileScreenState
 
   String _prettyError(Object e) {
     if (e is AuthServiceException) {
-      return e.message.trim().isEmpty
-          ? 'Sign-in failed.'
-          : e.message;
+      return e.message.trim().isEmpty ? 'Sign-in failed.' : e.message;
     }
     final msg = e.toString();
     if (msg.contains('cancelled')) return 'Sign-in was cancelled.';
@@ -319,15 +310,13 @@ class _LeaderboardProfileScreenState
         colors: [AppConfig.primaryColor, AppConfig.infoColor],
       );
     }
-    return _avatarOptions[
-    index.clamp(0, _avatarOptions.length - 1)];
+    return _avatarOptions[index.clamp(0, _avatarOptions.length - 1)];
   }
 
   String _memberForText(int joinedAtMs) {
     if (joinedAtMs <= 0) return 'Member';
     final joined =
-    DateTime.fromMillisecondsSinceEpoch(joinedAtMs, isUtc: true)
-        .toLocal();
+    DateTime.fromMillisecondsSinceEpoch(joinedAtMs, isUtc: true).toLocal();
     final diffDays = DateTime.now().difference(joined).inDays;
     if (diffDays < 0) return 'Member';
     final years = diffDays ~/ 365;
@@ -339,9 +328,7 @@ class _LeaderboardProfileScreenState
           : 'Member for $years yr';
     }
     if (months > 0) {
-      return days > 0
-          ? 'Member for $months mo $days d'
-          : 'Member for $months mo';
+      return days > 0 ? 'Member for $months mo $days d' : 'Member for $months mo';
     }
     return days > 0 ? 'Member for $days d' : 'Just joined';
   }
@@ -349,8 +336,7 @@ class _LeaderboardProfileScreenState
   String _normalizeCountry(String raw) {
     final v = raw.trim();
     if (v.isEmpty) return '';
-    final only =
-    v.replaceAll(RegExp(r'[^a-zA-Z]'), '').toUpperCase();
+    final only = v.replaceAll(RegExp(r'[^a-zA-Z]'), '').toUpperCase();
     return only.length <= 2 ? only : only.substring(0, 2);
   }
 
@@ -385,8 +371,7 @@ class _LeaderboardProfileScreenState
       _isAdjustingPostText = true;
       _postC.value = TextEditingValue(
         text: trimmed,
-        selection:
-        TextSelection.collapsed(offset: trimmed.length),
+        selection: TextSelection.collapsed(offset: trimmed.length),
       );
       _isAdjustingPostText = false;
       _showSnack(
@@ -409,8 +394,7 @@ class _LeaderboardProfileScreenState
   void _showSnack(String text, {bool isError = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).clearSnackBars();
-    final isDark =
-        Theme.of(context).brightness == Brightness.dark;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         backgroundColor: Colors.transparent,
@@ -422,8 +406,7 @@ class _LeaderboardProfileScreenState
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
             child: Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 16, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: isError
@@ -433,8 +416,7 @@ class _LeaderboardProfileScreenState
                   ]
                       : [
                     AppConfig.primaryColor.withOpacity(0.95),
-                    const Color(0xFF3B82F6)
-                        .withOpacity(0.85),
+                    const Color(0xFF3B82F6).withOpacity(0.85),
                   ],
                 ),
                 borderRadius: BorderRadius.circular(16),
@@ -472,8 +454,7 @@ class _LeaderboardProfileScreenState
     required String title,
     required String message,
   }) {
-    final isDark =
-        Theme.of(context).brightness == Brightness.dark;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return showDialog<void>(
       context: context,
       builder: (_) => AlertDialog(
@@ -521,13 +502,11 @@ class _LeaderboardProfileScreenState
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
                     ),
-                    padding:
-                    const EdgeInsets.symmetric(vertical: 14),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
                   child: const Text(
                     'OK',
-                    style:
-                    TextStyle(fontWeight: FontWeight.w900),
+                    style: TextStyle(fontWeight: FontWeight.w900),
                   ),
                 ),
               ),
@@ -547,21 +526,16 @@ class _LeaderboardProfileScreenState
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (ctx) {
-        final isDark =
-            Theme.of(ctx).brightness == Brightness.dark;
+        final isDark = Theme.of(ctx).brightness == Brightness.dark;
         return ClipRRect(
-          borderRadius:
-          const BorderRadius.vertical(top: Radius.circular(32)),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
             child: Container(
-              padding:
-              const EdgeInsets.fromLTRB(24, 16, 24, 24),
+              padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
               decoration: BoxDecoration(
-                color: (isDark
-                    ? const Color(0xFF151C2F)
-                    : Colors.white)
-                    .withOpacity(0.9),
+                color:
+                (isDark ? const Color(0xFF151C2F) : Colors.white).withOpacity(0.9),
               ),
               child: SafeArea(
                 top: false,
@@ -572,34 +546,27 @@ class _LeaderboardProfileScreenState
                       width: 48,
                       height: 6,
                       decoration: BoxDecoration(
-                        color: isDark
-                            ? Colors.white24
-                            : Colors.black12,
+                        color: isDark ? Colors.white24 : Colors.black12,
                         borderRadius: BorderRadius.circular(3),
                       ),
                     ),
                     const SizedBox(height: 20),
                     Row(
-                      mainAxisAlignment:
-                      MainAxisAlignment.spaceBetween,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
                           'Choose Avatar',
                           style: TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.w900,
-                            color: isDark
-                                ? Colors.white
-                                : Colors.black87,
+                            color: isDark ? Colors.white : Colors.black87,
                           ),
                         ),
                         IconButton(
                           onPressed: () => Navigator.pop(ctx),
                           icon: Icon(
                             Icons.close_rounded,
-                            color: isDark
-                                ? Colors.white70
-                                : Colors.black54,
+                            color: isDark ? Colors.white70 : Colors.black54,
                           ),
                         ),
                       ],
@@ -608,10 +575,8 @@ class _LeaderboardProfileScreenState
                     GridView.builder(
                       shrinkWrap: true,
                       itemCount: _avatarOptions.length,
-                      physics:
-                      const BouncingScrollPhysics(),
-                      gridDelegate:
-                      const SliverGridDelegateWithFixedCrossAxisCount(
+                      physics: const BouncingScrollPhysics(),
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: 4,
                         mainAxisSpacing: 12,
                         crossAxisSpacing: 12,
@@ -623,21 +588,17 @@ class _LeaderboardProfileScreenState
                         return GestureDetector(
                           onTap: () => Navigator.pop(ctx, i),
                           child: AnimatedContainer(
-                            duration:
-                            const Duration(milliseconds: 300),
+                            duration: const Duration(milliseconds: 300),
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 colors: [
-                                  opt.colors[0].withOpacity(
-                                      isDark ? 0.6 : 0.4),
-                                  opt.colors[1].withOpacity(
-                                      isDark ? 0.3 : 0.2),
+                                  opt.colors[0].withOpacity(isDark ? 0.6 : 0.4),
+                                  opt.colors[1].withOpacity(isDark ? 0.3 : 0.2),
                                 ],
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
                               ),
-                              borderRadius:
-                              BorderRadius.circular(22),
+                              borderRadius: BorderRadius.circular(22),
                               border: Border.all(
                                 color: isSel
                                     ? AppConfig.primaryColor
@@ -647,8 +608,7 @@ class _LeaderboardProfileScreenState
                               boxShadow: [
                                 if (isSel)
                                   BoxShadow(
-                                    color: AppConfig.primaryColor
-                                        .withOpacity(0.4),
+                                    color: AppConfig.primaryColor.withOpacity(0.4),
                                     blurRadius: 15,
                                     offset: const Offset(0, 5),
                                   ),
@@ -657,8 +617,7 @@ class _LeaderboardProfileScreenState
                             child: Center(
                               child: Text(
                                 opt.emoji,
-                                style:
-                                const TextStyle(fontSize: 32),
+                                style: const TextStyle(fontSize: 32),
                               ),
                             ),
                           ),
@@ -678,8 +637,7 @@ class _LeaderboardProfileScreenState
                             }
                           }
                         },
-                        icon:
-                        const Icon(Icons.emoji_emotions_outlined),
+                        icon: const Icon(Icons.emoji_emotions_outlined),
                         label: const Text(
                           'Custom Emoji',
                           style: TextStyle(
@@ -688,8 +646,7 @@ class _LeaderboardProfileScreenState
                           ),
                         ),
                         style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                              vertical: 14),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),
                           ),
@@ -713,24 +670,19 @@ class _LeaderboardProfileScreenState
   }
 
   Future<String?> _pickEmoji(BuildContext ctx) {
-    final isDark =
-        Theme.of(ctx).brightness == Brightness.dark;
+    final isDark = Theme.of(ctx).brightness == Brightness.dark;
     return showModalBottomSheet<String>(
       context: ctx,
       backgroundColor: Colors.transparent,
       builder: (c) => ClipRRect(
-        borderRadius:
-        const BorderRadius.vertical(top: Radius.circular(32)),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
           child: Container(
-            padding:
-            const EdgeInsets.fromLTRB(24, 16, 24, 24),
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
             decoration: BoxDecoration(
-              color: (isDark
-                  ? const Color(0xFF151C2F)
-                  : Colors.white)
-                  .withOpacity(0.95),
+              color:
+              (isDark ? const Color(0xFF151C2F) : Colors.white).withOpacity(0.95),
             ),
             child: SafeArea(
               top: false,
@@ -741,34 +693,27 @@ class _LeaderboardProfileScreenState
                     width: 48,
                     height: 6,
                     decoration: BoxDecoration(
-                      color: isDark
-                          ? Colors.white24
-                          : Colors.black12,
+                      color: isDark ? Colors.white24 : Colors.black12,
                       borderRadius: BorderRadius.circular(3),
                     ),
                   ),
                   const SizedBox(height: 20),
                   Row(
-                    mainAxisAlignment:
-                    MainAxisAlignment.spaceBetween,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
                         'More Emojis',
                         style: TextStyle(
                           fontSize: 22,
                           fontWeight: FontWeight.w900,
-                          color: isDark
-                              ? Colors.white
-                              : Colors.black87,
+                          color: isDark ? Colors.white : Colors.black87,
                         ),
                       ),
                       IconButton(
                         onPressed: () => Navigator.pop(c),
                         icon: Icon(
                           Icons.close_rounded,
-                          color: isDark
-                              ? Colors.white70
-                              : Colors.black54,
+                          color: isDark ? Colors.white70 : Colors.black54,
                         ),
                       ),
                     ],
@@ -777,10 +722,8 @@ class _LeaderboardProfileScreenState
                   GridView.builder(
                     shrinkWrap: true,
                     itemCount: _emojiOptions.length,
-                    physics:
-                    const BouncingScrollPhysics(),
-                    gridDelegate:
-                    const SliverGridDelegateWithFixedCrossAxisCount(
+                    physics: const BouncingScrollPhysics(),
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 6,
                       mainAxisSpacing: 12,
                       crossAxisSpacing: 12,
@@ -794,24 +737,18 @@ class _LeaderboardProfileScreenState
                         child: Container(
                           decoration: BoxDecoration(
                             color: isSel
-                                ? AppConfig.primaryColor
-                                .withOpacity(0.2)
-                                : (isDark
-                                ? Colors.white
-                                : Colors.black)
-                                .withOpacity(0.05),
+                                ? AppConfig.primaryColor.withOpacity(0.2)
+                                : (isDark ? Colors.white : Colors.black).withOpacity(0.05),
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(
-                              color: isSel
-                                  ? AppConfig.primaryColor
-                                  : Colors.transparent,
+                              color:
+                              isSel ? AppConfig.primaryColor : Colors.transparent,
                             ),
                           ),
                           child: Center(
                             child: Text(
                               e,
-                              style:
-                              const TextStyle(fontSize: 22),
+                              style: const TextStyle(fontSize: 22),
                             ),
                           ),
                         ),
@@ -849,9 +786,7 @@ class _LeaderboardProfileScreenState
       final double myXp = _existing?.cachedScore ?? 0.0;
       final nowMs = DateTime.now().millisecondsSinceEpoch;
 
-      await FirebaseFirestore.instance
-          .collection('leaderboard_v1_posts')
-          .add({
+      await FirebaseFirestore.instance.collection('leaderboard_v1_posts').add({
         'authorUid': _uid,
         'authorName': _nameC.text.trim(),
         'authorAvatar': _emoji.isEmpty ? '🙂' : _emoji,
@@ -888,16 +823,12 @@ class _LeaderboardProfileScreenState
       return _showSnack('Sign-in required.', isError: true);
     }
 
-    final displayName =
-    LeaderboardProfileModel.safeDisplayName(_nameC.text);
+    final displayName = LeaderboardProfileModel.safeDisplayName(_nameC.text);
 
-    // ✅ FIX: empty string pass করো
-    // model.copyWith() এটা বুঝে null/clear করবে
     final tagline = _taglineC.text.trim();
     final bio = _bioC.text.trim();
     final country = _normalizeCountry(_countryC.text);
-    final safeEmoji =
-    LeaderboardProfileModel.safeEmoji(_emoji);
+    final safeEmoji = LeaderboardProfileModel.safeEmoji(_emoji);
 
     setState(() => _saving = true);
     try {
@@ -906,9 +837,8 @@ class _LeaderboardProfileScreenState
           LeaderboardProfileModel.create(
             uid: uid,
             displayName: displayName,
-            joinedAtMs: _joinedAtMs > 0
-                ? _joinedAtMs
-                : now.toUtc().millisecondsSinceEpoch,
+            joinedAtMs:
+            _joinedAtMs > 0 ? _joinedAtMs : now.toUtc().millisecondsSinceEpoch,
             avatarIndex: _avatarIndex,
             avatarEmoji: safeEmoji,
             isOptedIn: _optedIn,
@@ -930,8 +860,7 @@ class _LeaderboardProfileScreenState
         showStudyHours: _showStudyHours,
         avatarEmoji: safeEmoji,
         avatarIndex: _avatarIndex,
-        joinedAtMs:
-        _joinedAtMs > 0 ? _joinedAtMs : base.joinedAtMs,
+        joinedAtMs: _joinedAtMs > 0 ? _joinedAtMs : base.joinedAtMs,
         isInterviewUser: _isInterviewUser,
         profileThemeIndex: _profileThemeIndex,
         cachedRank: _existing?.cachedRank ?? -1,
@@ -959,13 +888,11 @@ class _LeaderboardProfileScreenState
 
       if (finalProfile.isOptedIn) {
         try {
-          await LeaderboardService.instance
-              .syncMyProfileToCloud();
+          await LeaderboardService.instance.syncMyProfileToCloud();
         } catch (_) {}
       } else {
         try {
-          await LeaderboardService.instance
-              .hideMyProfileFromLeaderboard();
+          await LeaderboardService.instance.hideMyProfileFromLeaderboard();
         } catch (_) {
           _showSnack(
             'Saved locally. Cloud update needs internet.',
@@ -995,8 +922,7 @@ class _LeaderboardProfileScreenState
   }
 
   Future<void> _deleteCloudProfile() async {
-    final isDark =
-        Theme.of(context).brightness == Brightness.dark;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -1039,14 +965,11 @@ class _LeaderboardProfileScreenState
                 children: [
                   Expanded(
                     child: TextButton(
-                      onPressed: () =>
-                          Navigator.pop(context, false),
+                      onPressed: () => Navigator.pop(context, false),
                       child: Text(
                         'Cancel',
                         style: TextStyle(
-                          color: isDark
-                              ? Colors.white60
-                              : Colors.black54,
+                          color: isDark ? Colors.white60 : Colors.black54,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
@@ -1055,22 +978,18 @@ class _LeaderboardProfileScreenState
                   const SizedBox(width: 12),
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: () =>
-                          Navigator.pop(context, true),
+                      onPressed: () => Navigator.pop(context, true),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppConfig.errorColor,
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
-                          borderRadius:
-                          BorderRadius.circular(16),
+                          borderRadius: BorderRadius.circular(16),
                         ),
-                        padding:
-                        const EdgeInsets.symmetric(vertical: 14),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
                       child: const Text(
                         'Delete',
-                        style:
-                        TextStyle(fontWeight: FontWeight.w900),
+                        style: TextStyle(fontWeight: FontWeight.w900),
                       ),
                     ),
                   ),
@@ -1087,8 +1006,7 @@ class _LeaderboardProfileScreenState
     SoundService.playTap();
     setState(() => _saving = true);
     try {
-      await LeaderboardService.instance
-          .deleteMyLeaderboardProfileFromCloud(
+      await LeaderboardService.instance.deleteMyLeaderboardProfileFromCloud(
         alsoClearLocalProfile: true,
       );
       if (!mounted) return;
@@ -1127,13 +1045,10 @@ class _LeaderboardProfileScreenState
                 top: Radius.circular(32),
               ),
               child: BackdropFilter(
-                filter:
-                ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
                 child: Container(
                   decoration: BoxDecoration(
-                    color: (isDark
-                        ? const Color(0xFF151C2F)
-                        : Colors.white)
+                    color: (isDark ? const Color(0xFF151C2F) : Colors.white)
                         .withOpacity(0.96),
                   ),
                   child: Column(
@@ -1143,15 +1058,12 @@ class _LeaderboardProfileScreenState
                         width: 44,
                         height: 5,
                         decoration: BoxDecoration(
-                          color: isDark
-                              ? Colors.white24
-                              : Colors.black12,
+                          color: isDark ? Colors.white24 : Colors.black12,
                           borderRadius: BorderRadius.circular(3),
                         ),
                       ),
                       Padding(
-                        padding:
-                        const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                        padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
                         child: Row(
                           children: [
                             const Icon(
@@ -1164,9 +1076,7 @@ class _LeaderboardProfileScreenState
                               style: TextStyle(
                                 fontSize: 20,
                                 fontWeight: FontWeight.w900,
-                                color: isDark
-                                    ? Colors.white
-                                    : Colors.black87,
+                                color: isDark ? Colors.white : Colors.black87,
                               ),
                             ),
                             const Spacer(),
@@ -1174,9 +1084,7 @@ class _LeaderboardProfileScreenState
                               onPressed: () => Navigator.pop(ctx),
                               icon: Icon(
                                 Icons.close_rounded,
-                                color: isDark
-                                    ? Colors.white70
-                                    : Colors.black54,
+                                color: isDark ? Colors.white70 : Colors.black54,
                               ),
                             ),
                           ],
@@ -1184,9 +1092,7 @@ class _LeaderboardProfileScreenState
                       ),
                       Divider(
                         height: 1,
-                        color: isDark
-                            ? Colors.white12
-                            : Colors.black12,
+                        color: isDark ? Colors.white12 : Colors.black12,
                       ),
                       Expanded(
                         child: StreamBuilder<List<LikerInfo>>(
@@ -1208,9 +1114,7 @@ class _LeaderboardProfileScreenState
                                 child: Text(
                                   'Failed to load likes.',
                                   style: TextStyle(
-                                    color: isDark
-                                        ? Colors.white60
-                                        : Colors.black54,
+                                    color: isDark ? Colors.white60 : Colors.black54,
                                     fontWeight: FontWeight.w700,
                                   ),
                                 ),
@@ -1245,8 +1149,7 @@ class _LeaderboardProfileScreenState
 
                             return ListView.builder(
                               controller: scrollController,
-                              padding: const EdgeInsets.fromLTRB(
-                                  16, 10, 16, 24),
+                              padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
                               itemCount: likers.length,
                               itemBuilder: (context, index) {
                                 return _MyProfileLikerTile(
@@ -1312,8 +1215,7 @@ class _LeaderboardProfileScreenState
             ),
             boxShadow: [
               BoxShadow(
-                color:
-                Colors.black.withOpacity(isDark ? 0.35 : 0.05),
+                color: Colors.black.withOpacity(isDark ? 0.35 : 0.05),
                 blurRadius: 28,
                 offset: const Offset(0, 10),
               ),
@@ -1325,8 +1227,7 @@ class _LeaderboardProfileScreenState
     );
   }
 
-  InputDecoration _inputDeco(
-      String label, String hint, bool isDark) {
+  InputDecoration _inputDeco(String label, String hint, bool isDark) {
     return InputDecoration(
       labelText: label,
       hintText: hint,
@@ -1342,8 +1243,7 @@ class _LeaderboardProfileScreenState
       fillColor: isDark
           ? Colors.white.withOpacity(0.05)
           : Colors.black.withOpacity(0.03),
-      contentPadding:
-      const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(18),
         borderSide: BorderSide.none,
@@ -1385,8 +1285,7 @@ class _LeaderboardProfileScreenState
         children: [
           Expanded(
             child: Column(
-              crossAxisAlignment:
-              CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   title,
@@ -1407,16 +1306,19 @@ class _LeaderboardProfileScreenState
               ],
             ),
           ),
-          Switch(
-            activeColor: AppConfig.primaryColor,
-            value: value,
-            onChanged: onChanged != null
-                ? (v) {
-              HapticFeedback.lightImpact();
-              SoundService.playTap();
-              onChanged(v);
-            }
-                : null,
+          Transform.scale(
+            scale: 0.85,
+            child: Switch(
+              activeColor: AppConfig.primaryColor,
+              value: value,
+              onChanged: onChanged != null
+                  ? (v) {
+                HapticFeedback.lightImpact();
+                SoundService.playTap();
+                onChanged(v);
+              }
+                  : null,
+            ),
           ),
         ],
       ),
@@ -1425,8 +1327,7 @@ class _LeaderboardProfileScreenState
 
   @override
   Widget build(BuildContext context) {
-    final isDark =
-        Theme.of(context).brightness == Brightness.dark;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final bgColors = isDark
         ? [const Color(0xFF0F172A), const Color(0xFF1E1B4B)]
         : [const Color(0xFFF1F5F9), const Color(0xFFE0E7FF)];
@@ -1448,16 +1349,14 @@ class _LeaderboardProfileScreenState
           AnimatedBuilder(
             animation: _bgAnimController,
             builder: (context, child) {
-              final t =
-                  _bgAnimController.value * 2 * math.pi;
+              final t = _bgAnimController.value * 2 * math.pi;
               return Stack(
                 children: [
                   Positioned(
                     top: -50 + (40 * math.sin(t)),
                     left: -100 + (50 * math.cos(t)),
                     child: ImageFiltered(
-                      imageFilter: ImageFilter.blur(
-                          sigmaX: 80, sigmaY: 80),
+                      imageFilter: ImageFilter.blur(sigmaX: 80, sigmaY: 80),
                       child: Container(
                         width: 380,
                         height: 380,
@@ -1473,8 +1372,7 @@ class _LeaderboardProfileScreenState
                     bottom: 80 + (50 * math.cos(t * 0.8)),
                     right: -50 + (40 * math.sin(t * 1.2)),
                     child: ImageFiltered(
-                      imageFilter: ImageFilter.blur(
-                          sigmaX: 80, sigmaY: 80),
+                      imageFilter: ImageFilter.blur(sigmaX: 80, sigmaY: 80),
                       child: Container(
                         width: 320,
                         height: 320,
@@ -1501,9 +1399,7 @@ class _LeaderboardProfileScreenState
               duration: const Duration(milliseconds: 350),
               switchInCurve: Curves.easeOutCubic,
               switchOutCurve: Curves.easeInCubic,
-              child: _isEditMode
-                  ? _buildEditView(isDark)
-                  : _buildViewMode(isDark),
+              child: _isEditMode ? _buildEditView(isDark) : _buildViewMode(isDark),
             ),
         ],
       ),
@@ -1522,12 +1418,9 @@ class _LeaderboardProfileScreenState
     final levelTitle = stats['levelTitle'] as String? ?? '—';
     final bestStreak = stats['bestStreak'] as int? ?? 0;
     final totalCompleted = stats['totalCompleted'] as int? ?? 0;
-    final studyMins =
-    DatabaseService.getTotalStudyMinutesAllTime();
-    final studyToday =
-    DatabaseService.getTotalStudyMinutesToday();
-    final studyWeek =
-    DatabaseService.getTotalStudyMinutesThisWeek();
+    final studyMins = DatabaseService.getTotalStudyMinutesAllTime();
+    final studyToday = DatabaseService.getTotalStudyMinutesToday();
+    final studyWeek = DatabaseService.getTotalStudyMinutesThisWeek();
     final cachedRank = profile?.cachedRank ?? -1;
     final cachedScore = profile?.cachedScore ?? 0.0;
 
@@ -1566,14 +1459,12 @@ class _LeaderboardProfileScreenState
           ),
           actions: [
             Padding(
-              padding:
-              const EdgeInsets.only(right: 12, top: 6, bottom: 6),
+              padding: const EdgeInsets.only(right: 12, top: 6, bottom: 6),
               child: GestureDetector(
                 onTap: _enterEditMode,
                 child: _buildGlass(
                   isDark: isDark,
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   borderRadius: 14,
                   gradientColors: [
                     AppConfig.primaryColor.withOpacity(0.9),
@@ -1616,8 +1507,7 @@ class _LeaderboardProfileScreenState
         SliverList(
           delegate: SliverChildListDelegate([
             Padding(
-              padding:
-              const EdgeInsets.fromLTRB(18, 20, 18, 40),
+              padding: const EdgeInsets.fromLTRB(18, 20, 18, 40),
               child: Column(
                 children: [
                   _buildGlass(
@@ -1627,17 +1517,13 @@ class _LeaderboardProfileScreenState
                       children: [
                         AnimatedBuilder(
                           animation: _bgAnimController,
-                          builder: (context, child) =>
-                              Transform.translate(
-                                offset: Offset(
-                                  0,
-                                  6 *
-                                      math.sin(_bgAnimController.value *
-                                          2 *
-                                          math.pi),
-                                ),
-                                child: child,
-                              ),
+                          builder: (context, child) => Transform.translate(
+                            offset: Offset(
+                              0,
+                              6 * math.sin(_bgAnimController.value * 2 * math.pi),
+                            ),
+                            child: child,
+                          ),
                           child: Stack(
                             clipBehavior: Clip.none,
                             alignment: Alignment.center,
@@ -1649,8 +1535,7 @@ class _LeaderboardProfileScreenState
                                   gradient: LinearGradient(
                                     colors: [
                                       avatar.colors[0],
-                                      avatar.colors[1]
-                                          .withOpacity(0.8),
+                                      avatar.colors[1].withOpacity(0.8),
                                     ],
                                     begin: Alignment.topLeft,
                                     end: Alignment.bottomRight,
@@ -1658,8 +1543,8 @@ class _LeaderboardProfileScreenState
                                   shape: BoxShape.circle,
                                   boxShadow: [
                                     BoxShadow(
-                                      color: avatar.colors[0].withOpacity(
-                                          isDark ? 0.5 : 0.3),
+                                      color: avatar.colors[0]
+                                          .withOpacity(isDark ? 0.5 : 0.3),
                                       blurRadius: 28,
                                       offset: const Offset(0, 10),
                                     ),
@@ -1667,11 +1552,8 @@ class _LeaderboardProfileScreenState
                                 ),
                                 child: Center(
                                   child: Text(
-                                    _emoji.trim().isEmpty
-                                        ? avatar.emoji
-                                        : _emoji,
-                                    style:
-                                    const TextStyle(fontSize: 48),
+                                    _emoji.trim().isEmpty ? avatar.emoji : _emoji,
+                                    style: const TextStyle(fontSize: 48),
                                   ),
                                 ),
                               ),
@@ -1680,8 +1562,7 @@ class _LeaderboardProfileScreenState
                                   bottom: -4,
                                   right: -4,
                                   child: Container(
-                                    padding:
-                                    const EdgeInsets.symmetric(
+                                    padding: const EdgeInsets.symmetric(
                                       horizontal: 8,
                                       vertical: 4,
                                     ),
@@ -1692,8 +1573,7 @@ class _LeaderboardProfileScreenState
                                           Color(0xFFF59E0B),
                                         ],
                                       ),
-                                      borderRadius:
-                                      BorderRadius.circular(10),
+                                      borderRadius: BorderRadius.circular(10),
                                       border: Border.all(
                                         color: isDark
                                             ? const Color(0xFF0B1020)
@@ -1720,9 +1600,7 @@ class _LeaderboardProfileScreenState
                           style: TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.w900,
-                            color: isDark
-                                ? Colors.white
-                                : Colors.black87,
+                            color: isDark ? Colors.white : Colors.black87,
                           ),
                           textAlign: TextAlign.center,
                         ),
@@ -1732,9 +1610,7 @@ class _LeaderboardProfileScreenState
                             profile!.tagline!,
                             style: TextStyle(
                               fontSize: 14,
-                              color: isDark
-                                  ? Colors.white60
-                                  : Colors.black54,
+                              color: isDark ? Colors.white60 : Colors.black54,
                               fontWeight: FontWeight.w600,
                             ),
                             textAlign: TextAlign.center,
@@ -1744,24 +1620,18 @@ class _LeaderboardProfileScreenState
                         ],
                         const SizedBox(height: 10),
                         Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
+                          padding:
+                          const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
                               colors: [
-                                AppConfig.primaryColor
-                                    .withOpacity(0.2),
-                                AppConfig.accentColor
-                                    .withOpacity(0.1),
+                                AppConfig.primaryColor.withOpacity(0.2),
+                                AppConfig.accentColor.withOpacity(0.1),
                               ],
                             ),
-                            borderRadius:
-                            BorderRadius.circular(999),
+                            borderRadius: BorderRadius.circular(999),
                             border: Border.all(
-                              color: AppConfig.primaryColor
-                                  .withOpacity(0.3),
+                              color: AppConfig.primaryColor.withOpacity(0.3),
                             ),
                           ),
                           child: Text(
@@ -1769,9 +1639,7 @@ class _LeaderboardProfileScreenState
                             style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w900,
-                              color: isDark
-                                  ? Colors.white
-                                  : Colors.black87,
+                              color: isDark ? Colors.white : Colors.black87,
                             ),
                           ),
                         ),
@@ -1780,16 +1648,13 @@ class _LeaderboardProfileScreenState
                           _memberForText(_joinedAtMs),
                           style: TextStyle(
                             fontSize: 13,
-                            color: isDark
-                                ? Colors.white54
-                                : Colors.black45,
+                            color: isDark ? Colors.white54 : Colors.black45,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
                         const SizedBox(height: 10),
                         Row(
-                          mainAxisAlignment:
-                          MainAxisAlignment.center,
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Container(
                               width: 8,
@@ -1825,17 +1690,14 @@ class _LeaderboardProfileScreenState
                               color: isDark
                                   ? Colors.white.withOpacity(0.04)
                                   : Colors.black.withOpacity(0.03),
-                              borderRadius:
-                              BorderRadius.circular(16),
+                              borderRadius: BorderRadius.circular(16),
                             ),
                             child: Text(
                               profile!.bio!,
                               style: TextStyle(
                                 fontSize: 13.5,
                                 height: 1.5,
-                                color: isDark
-                                    ? Colors.white70
-                                    : Colors.black87,
+                                color: isDark ? Colors.white70 : Colors.black87,
                               ),
                               textAlign: TextAlign.center,
                             ),
@@ -1848,18 +1710,15 @@ class _LeaderboardProfileScreenState
                   _buildGlass(
                     isDark: isDark,
                     child: Column(
-                      crossAxisAlignment:
-                      CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
                           children: [
                             Container(
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
-                                color: AppConfig.primaryColor
-                                    .withOpacity(0.15),
-                                borderRadius:
-                                BorderRadius.circular(10),
+                                color: AppConfig.primaryColor.withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(10),
                               ),
                               child: const Icon(
                                 Icons.trending_up_rounded,
@@ -1873,9 +1732,7 @@ class _LeaderboardProfileScreenState
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w900,
-                                color: isDark
-                                    ? Colors.white
-                                    : Colors.black87,
+                                color: isDark ? Colors.white : Colors.black87,
                               ),
                             ),
                             const Spacer(),
@@ -1891,24 +1748,21 @@ class _LeaderboardProfileScreenState
                         ),
                         const SizedBox(height: 16),
                         ClipRRect(
-                          borderRadius:
-                          BorderRadius.circular(999),
+                          borderRadius: BorderRadius.circular(999),
                           child: LinearProgressIndicator(
                             value: progress.clamp(0.0, 1.0),
                             minHeight: 10,
                             backgroundColor: isDark
                                 ? Colors.white.withOpacity(0.1)
                                 : Colors.black.withOpacity(0.07),
-                            valueColor:
-                            const AlwaysStoppedAnimation(
+                            valueColor: const AlwaysStoppedAnimation(
                               AppConfig.primaryColor,
                             ),
                           ),
                         ),
                         const SizedBox(height: 10),
                         Row(
-                          mainAxisAlignment:
-                          MainAxisAlignment.spaceBetween,
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
                               '$xp XP',
@@ -1922,9 +1776,7 @@ class _LeaderboardProfileScreenState
                               'Next level: ${stats['xpNext']} XP',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: isDark
-                                    ? Colors.white54
-                                    : Colors.black45,
+                                color: isDark ? Colors.white54 : Colors.black45,
                               ),
                             ),
                           ],
@@ -1936,18 +1788,15 @@ class _LeaderboardProfileScreenState
                   _buildGlass(
                     isDark: isDark,
                     child: Column(
-                      crossAxisAlignment:
-                      CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
                           children: [
                             Container(
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
-                                color: AppConfig.accentColor
-                                    .withOpacity(0.15),
-                                borderRadius:
-                                BorderRadius.circular(10),
+                                color: AppConfig.accentColor.withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(10),
                               ),
                               child: const Icon(
                                 Icons.bar_chart_rounded,
@@ -1961,9 +1810,7 @@ class _LeaderboardProfileScreenState
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w900,
-                                color: isDark
-                                    ? Colors.white
-                                    : Colors.black87,
+                                color: isDark ? Colors.white : Colors.black87,
                               ),
                             ),
                           ],
@@ -1971,8 +1818,7 @@ class _LeaderboardProfileScreenState
                         const SizedBox(height: 16),
                         GridView.count(
                           shrinkWrap: true,
-                          physics:
-                          const NeverScrollableScrollPhysics(),
+                          physics: const NeverScrollableScrollPhysics(),
                           crossAxisCount: 2,
                           mainAxisSpacing: 12,
                           crossAxisSpacing: 12,
@@ -2034,10 +1880,8 @@ class _LeaderboardProfileScreenState
                           Container(
                             padding: const EdgeInsets.all(8),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFFFD700)
-                                  .withOpacity(0.15),
-                              borderRadius:
-                              BorderRadius.circular(10),
+                              color: const Color(0xFFFFD700).withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(10),
                             ),
                             child: const Icon(
                               Icons.emoji_events_rounded,
@@ -2048,17 +1892,14 @@ class _LeaderboardProfileScreenState
                           const SizedBox(width: 12),
                           Expanded(
                             child: Column(
-                              crossAxisAlignment:
-                              CrossAxisAlignment.start,
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
                                   'Leaderboard Rank',
                                   style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w900,
-                                    color: isDark
-                                        ? Colors.white
-                                        : Colors.black87,
+                                    color: isDark ? Colors.white : Colors.black87,
                                   ),
                                 ),
                                 const SizedBox(height: 2),
@@ -2068,9 +1909,7 @@ class _LeaderboardProfileScreenState
                                       : 'Unranked',
                                   style: TextStyle(
                                     fontSize: 12,
-                                    color: isDark
-                                        ? Colors.white54
-                                        : Colors.black45,
+                                    color: isDark ? Colors.white54 : Colors.black45,
                                   ),
                                 ),
                               ],
@@ -2089,14 +1928,11 @@ class _LeaderboardProfileScreenState
                         ],
                       ),
                     ),
-                  if (cachedRank > 0 || cachedScore > 0)
-                    const SizedBox(height: 18),
+                  if (cachedRank > 0 || cachedScore > 0) const SizedBox(height: 18),
 
-                  // ✅ Who liked my profile
                   if (_uid != null)
                     StreamBuilder<int>(
-                      stream: ProfileLikeService.instance
-                          .likeCountStream(targetUid: _uid!),
+                      stream: ProfileLikeService.instance.likeCountStream(targetUid: _uid!),
                       builder: (context, snap) {
                         final likeCount = snap.data ?? 0;
                         return Column(
@@ -2104,19 +1940,16 @@ class _LeaderboardProfileScreenState
                             _buildGlass(
                               isDark: isDark,
                               child: Column(
-                                crossAxisAlignment:
-                                CrossAxisAlignment.start,
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Row(
                                     children: [
                                       Container(
-                                        padding:
-                                        const EdgeInsets.all(8),
+                                        padding: const EdgeInsets.all(8),
                                         decoration: BoxDecoration(
-                                          color: const Color(0xFFFF4D6D)
-                                              .withOpacity(0.14),
-                                          borderRadius:
-                                          BorderRadius.circular(10),
+                                          color:
+                                          const Color(0xFFFF4D6D).withOpacity(0.14),
+                                          borderRadius: BorderRadius.circular(10),
                                         ),
                                         child: const Icon(
                                           Icons.favorite_rounded,
@@ -2130,8 +1963,7 @@ class _LeaderboardProfileScreenState
                                           'Profile Likes',
                                           style: TextStyle(
                                             fontSize: 16,
-                                            fontWeight:
-                                            FontWeight.w900,
+                                            fontWeight: FontWeight.w900,
                                             color: isDark
                                                 ? Colors.white
                                                 : Colors.black87,
@@ -2142,8 +1974,7 @@ class _LeaderboardProfileScreenState
                                         '$likeCount',
                                         style: const TextStyle(
                                           fontSize: 18,
-                                          fontWeight:
-                                          FontWeight.w900,
+                                          fontWeight: FontWeight.w900,
                                           color: Color(0xFFFF4D6D),
                                         ),
                                       ),
@@ -2157,9 +1988,8 @@ class _LeaderboardProfileScreenState
                                     style: TextStyle(
                                       fontSize: 12.8,
                                       height: 1.4,
-                                      color: isDark
-                                          ? Colors.white60
-                                          : Colors.black54,
+                                      color:
+                                      isDark ? Colors.white60 : Colors.black54,
                                     ),
                                   ),
                                   const SizedBox(height: 14),
@@ -2167,8 +1997,7 @@ class _LeaderboardProfileScreenState
                                     width: double.infinity,
                                     child: OutlinedButton.icon(
                                       onPressed: likeCount > 0
-                                          ? () => _showWhoLikedSheet(
-                                          isDark)
+                                          ? () => _showWhoLikedSheet(isDark)
                                           : null,
                                       icon: const Icon(
                                         Icons.people_alt_rounded,
@@ -2179,8 +2008,7 @@ class _LeaderboardProfileScreenState
                                             ? 'See Who Liked'
                                             : 'No Likes Yet',
                                         style: const TextStyle(
-                                          fontWeight:
-                                          FontWeight.w900,
+                                          fontWeight: FontWeight.w900,
                                         ),
                                       ),
                                     ),
@@ -2197,18 +2025,15 @@ class _LeaderboardProfileScreenState
                   _buildGlass(
                     isDark: isDark,
                     child: Column(
-                      crossAxisAlignment:
-                      CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
                           children: [
                             Container(
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
-                                color: AppConfig.primaryColor
-                                    .withOpacity(0.15),
-                                borderRadius:
-                                BorderRadius.circular(10),
+                                color: AppConfig.primaryColor.withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(10),
                               ),
                               child: const Icon(
                                 Icons.campaign_rounded,
@@ -2222,9 +2047,7 @@ class _LeaderboardProfileScreenState
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w900,
-                                color: isDark
-                                    ? Colors.white
-                                    : Colors.black87,
+                                color: isDark ? Colors.white : Colors.black87,
                               ),
                             ),
                           ],
@@ -2236,9 +2059,7 @@ class _LeaderboardProfileScreenState
                           maxLength: _maxPostChars,
                           onChanged: _handlePostChanged,
                           style: TextStyle(
-                            color: isDark
-                                ? Colors.white
-                                : Colors.black87,
+                            color: isDark ? Colors.white : Colors.black87,
                             height: 1.4,
                           ),
                           decoration: _inputDeco(
@@ -2248,20 +2069,16 @@ class _LeaderboardProfileScreenState
                           ),
                         ),
                         Row(
-                          mainAxisAlignment:
-                          MainAxisAlignment.end,
+                          mainAxisAlignment: MainAxisAlignment.end,
                           children: [
                             Text(
                               '${_wordCount(_postC.text)} / $_maxPostWords words',
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w700,
-                                color: _wordCount(_postC.text) >
-                                    _maxPostWords
+                                color: _wordCount(_postC.text) > _maxPostWords
                                     ? AppConfig.errorColor
-                                    : (isDark
-                                    ? Colors.white38
-                                    : Colors.black38),
+                                    : (isDark ? Colors.white38 : Colors.black38),
                               ),
                             ),
                           ],
@@ -2283,12 +2100,10 @@ class _LeaderboardProfileScreenState
                                     Color(0xFF3B82F6),
                                   ],
                                 ),
-                                borderRadius:
-                                BorderRadius.circular(14),
+                                borderRadius: BorderRadius.circular(14),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: AppConfig.primaryColor
-                                        .withOpacity(0.3),
+                                    color: AppConfig.primaryColor.withOpacity(0.3),
                                     blurRadius: 10,
                                     offset: const Offset(0, 4),
                                   ),
@@ -2330,16 +2145,14 @@ class _LeaderboardProfileScreenState
                           .limit(5)
                           .snapshots(),
                       builder: (context, snap) {
-                        if (!snap.hasData ||
-                            snap.data!.docs.isEmpty) {
+                        if (!snap.hasData || snap.data!.docs.isEmpty) {
                           return const SizedBox.shrink();
                         }
 
                         return _buildGlass(
                           isDark: isDark,
                           child: Column(
-                            crossAxisAlignment:
-                            CrossAxisAlignment.start,
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Row(
                                 children: [
@@ -2353,41 +2166,28 @@ class _LeaderboardProfileScreenState
                                     'My Posts',
                                     style: TextStyle(
                                       fontSize: 16,
-                                      fontWeight:
-                                      FontWeight.w900,
-                                      color: isDark
-                                          ? Colors.white
-                                          : Colors.black87,
+                                      fontWeight: FontWeight.w900,
+                                      color: isDark ? Colors.white : Colors.black87,
                                     ),
                                   ),
                                 ],
                               ),
                               const SizedBox(height: 14),
                               ...snap.data!.docs.map((doc) {
-                                final data = doc.data()
-                                as Map<String, dynamic>;
-                                final text =
-                                    data['content'] as String? ??
-                                        '';
+                                final data = doc.data() as Map<String, dynamic>;
+                                final text = data['content'] as String? ?? '';
                                 return Container(
-                                  margin: const EdgeInsets.only(
-                                      bottom: 10),
-                                  padding:
-                                  const EdgeInsets.all(14),
+                                  margin: const EdgeInsets.only(bottom: 10),
+                                  padding: const EdgeInsets.all(14),
                                   decoration: BoxDecoration(
                                     color: isDark
-                                        ? Colors.white
-                                        .withOpacity(0.04)
-                                        : Colors.black
-                                        .withOpacity(0.03),
-                                    borderRadius:
-                                    BorderRadius.circular(14),
+                                        ? Colors.white.withOpacity(0.04)
+                                        : Colors.black.withOpacity(0.03),
+                                    borderRadius: BorderRadius.circular(14),
                                     border: Border.all(
                                       color: isDark
-                                          ? Colors.white
-                                          .withOpacity(0.06)
-                                          : Colors.black
-                                          .withOpacity(0.04),
+                                          ? Colors.white.withOpacity(0.06)
+                                          : Colors.black.withOpacity(0.04),
                                     ),
                                   ),
                                   child: Row(
@@ -2399,17 +2199,14 @@ class _LeaderboardProfileScreenState
                                             fontSize: 13.5,
                                             height: 1.4,
                                             color: isDark
-                                                ? Colors.white
-                                                .withOpacity(
-                                                0.85)
+                                                ? Colors.white.withOpacity(0.85)
                                                 : Colors.black87,
                                           ),
                                         ),
                                       ),
                                       IconButton(
                                         padding: EdgeInsets.zero,
-                                        constraints:
-                                        const BoxConstraints(),
+                                        constraints: const BoxConstraints(),
                                         icon: const Icon(
                                           Icons.delete_outline_rounded,
                                           color: Colors.redAccent,
@@ -2434,8 +2231,7 @@ class _LeaderboardProfileScreenState
 
                   if (_existing != null)
                     TextButton.icon(
-                      onPressed:
-                      _saving ? null : _deleteCloudProfile,
+                      onPressed: _saving ? null : _deleteCloudProfile,
                       icon: const Icon(
                         Icons.delete_forever_rounded,
                         color: AppConfig.errorColor,
@@ -2473,9 +2269,7 @@ class _LeaderboardProfileScreenState
           leading: Padding(
             padding: const EdgeInsets.all(8),
             child: GestureDetector(
-              onTap: _existing != null
-                  ? _exitEditMode
-                  : () => Navigator.pop(context),
+              onTap: _existing != null ? _exitEditMode : () => Navigator.pop(context),
               child: _buildGlass(
                 isDark: isDark,
                 padding: EdgeInsets.zero,
@@ -2483,7 +2277,7 @@ class _LeaderboardProfileScreenState
                 child: Icon(
                   Icons.close_rounded,
                   color: isDark ? Colors.white : Colors.black87,
-                  size: 20,
+                  size: 22,
                 ),
               ),
             ),
@@ -2494,15 +2288,28 @@ class _LeaderboardProfileScreenState
               fontSize: 20,
               fontWeight: FontWeight.w900,
               color: isDark ? Colors.white : Colors.black87,
+              letterSpacing: -0.5,
             ),
           ),
           flexibleSpace: ClipRRect(
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
               child: Container(
-                color: isDark
-                    ? const Color(0xFF0B1020).withOpacity(0.55)
-                    : Colors.white.withOpacity(0.55),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: isDark
+                        ? [
+                      const Color(0xFF0B1020).withOpacity(0.7),
+                      const Color(0xFF1E1B4B).withOpacity(0.5),
+                    ]
+                        : [
+                      Colors.white.withOpacity(0.7),
+                      const Color(0xFFF8FAFC).withOpacity(0.5),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
@@ -2510,360 +2317,596 @@ class _LeaderboardProfileScreenState
         SliverList(
           delegate: SliverChildListDelegate([
             Padding(
-              padding:
-              const EdgeInsets.fromLTRB(18, 20, 18, 40),
+              padding: const EdgeInsets.fromLTRB(20, 24, 20, 50),
               child: Form(
                 key: _formKey,
                 child: Column(
                   children: [
                     _buildGlass(
                       isDark: isDark,
+                      padding: const EdgeInsets.all(28),
                       child: Column(
                         children: [
-                          GestureDetector(
-                            onTap: _saving ? null : _pickAvatar,
-                            child: Stack(
-                              alignment: Alignment.center,
-                              children: [
-                                Container(
-                                  width: 100,
-                                  height: 100,
+                          Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              AnimatedBuilder(
+                                animation: _bgAnimController,
+                                builder: (context, child) {
+                                  return Container(
+                                    width: 130,
+                                    height: 130,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      gradient: SweepGradient(
+                                        colors: [
+                                          avatar.colors[0].withOpacity(0.3),
+                                          avatar.colors[1].withOpacity(0.6),
+                                          avatar.colors[0].withOpacity(0.3),
+                                        ],
+                                        transform: GradientRotation(
+                                          _bgAnimController.value * 2 * math.pi,
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                              GestureDetector(
+                                onTap: _saving ? null : _pickAvatar,
+                                child: Container(
+                                  width: 116,
+                                  height: 116,
                                   decoration: BoxDecoration(
                                     gradient: LinearGradient(
                                       colors: [
                                         avatar.colors[0],
-                                        avatar.colors[1]
-                                            .withOpacity(0.8),
+                                        avatar.colors[1],
                                       ],
                                       begin: Alignment.topLeft,
                                       end: Alignment.bottomRight,
                                     ),
                                     shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: isDark
+                                          ? Colors.white.withOpacity(0.2)
+                                          : Colors.white,
+                                      width: 4,
+                                    ),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: avatar.colors[0]
-                                            .withOpacity(
-                                            isDark ? 0.5 : 0.3),
-                                        blurRadius: 24,
-                                        offset: const Offset(0, 8),
+                                        color: avatar.colors[0].withOpacity(0.5),
+                                        blurRadius: 32,
+                                        offset: const Offset(0, 12),
+                                      ),
+                                      BoxShadow(
+                                        color: avatar.colors[1].withOpacity(0.3),
+                                        blurRadius: 20,
+                                        offset: const Offset(0, 6),
                                       ),
                                     ],
                                   ),
                                   child: Center(
                                     child: Text(
-                                      _emoji.trim().isEmpty
-                                          ? avatar.emoji
-                                          : _emoji,
-                                      style:
-                                      const TextStyle(fontSize: 48),
+                                      _emoji.trim().isEmpty ? avatar.emoji : _emoji,
+                                      style: const TextStyle(fontSize: 52),
                                     ),
                                   ),
                                 ),
-                                Positioned(
-                                  bottom: 0,
-                                  right: 0,
+                              ),
+                              Positioned(
+                                bottom: 4,
+                                right: 4,
+                                child: GestureDetector(
+                                  onTap: _saving ? null : _pickAvatar,
                                   child: Container(
-                                    padding: const EdgeInsets.all(8),
+                                    padding: const EdgeInsets.all(10),
                                     decoration: BoxDecoration(
-                                      color: isDark
-                                          ? const Color(0xFF1E293B)
-                                          : Colors.white,
+                                      gradient: const LinearGradient(
+                                        colors: [
+                                          AppConfig.primaryColor,
+                                          Color(0xFF3B82F6),
+                                        ],
+                                      ),
                                       shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: isDark
+                                            ? const Color(0xFF0B1020)
+                                            : Colors.white,
+                                        width: 3,
+                                      ),
                                       boxShadow: [
                                         BoxShadow(
-                                          color: Colors.black
-                                              .withOpacity(0.15),
-                                          blurRadius: 12,
+                                          color: AppConfig.primaryColor.withOpacity(0.5),
+                                          blurRadius: 16,
+                                          offset: const Offset(0, 4),
                                         ),
                                       ],
                                     ),
                                     child: const Icon(
                                       Icons.edit_rounded,
                                       size: 18,
-                                      color: AppConfig.primaryColor,
+                                      color: Colors.white,
                                     ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 20),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 18,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  AppConfig.primaryColor.withOpacity(0.15),
+                                  AppConfig.accentColor.withOpacity(0.08),
+                                ],
+                              ),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: AppConfig.primaryColor.withOpacity(0.2),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.touch_app_rounded,
+                                  size: 16,
+                                  color: isDark ? Colors.white70 : Colors.black54,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Tap avatar to customize',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: isDark ? Colors.white70 : Colors.black54,
+                                    fontWeight: FontWeight.w700,
                                   ),
                                 ),
                               ],
                             ),
                           ),
-                          const SizedBox(height: 12),
-                          Text(
-                            'Tap to change avatar',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: isDark
-                                  ? Colors.white54
-                                  : Colors.black45,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 18),
+
+                    const SizedBox(height: 20),
+
                     _buildGlass(
                       isDark: isDark,
+                      padding: const EdgeInsets.all(24),
                       child: Column(
-                        crossAxisAlignment:
-                        CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Row(
                             children: [
                               Container(
-                                padding: const EdgeInsets.all(8),
+                                padding: const EdgeInsets.all(10),
                                 decoration: BoxDecoration(
-                                  color: AppConfig.primaryColor
-                                      .withOpacity(0.15),
-                                  borderRadius:
-                                  BorderRadius.circular(10),
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      AppConfig.primaryColor.withOpacity(0.2),
+                                      AppConfig.primaryColor.withOpacity(0.1),
+                                    ],
+                                  ),
+                                  borderRadius: BorderRadius.circular(12),
                                 ),
                                 child: const Icon(
                                   Icons.person_rounded,
                                   color: AppConfig.primaryColor,
-                                  size: 18,
+                                  size: 20,
                                 ),
                               ),
-                              const SizedBox(width: 10),
-                              Text(
-                                'Profile Details',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w900,
-                                  color: isDark
-                                      ? Colors.white
-                                      : Colors.black87,
-                                ),
+                              const SizedBox(width: 12),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Profile Details',
+                                    style: TextStyle(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w900,
+                                      color: isDark ? Colors.white : Colors.black87,
+                                      letterSpacing: -0.3,
+                                    ),
+                                  ),
+                                  Text(
+                                    'How others see you',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: isDark ? Colors.white54 : Colors.black45,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
-                          const SizedBox(height: 20),
-                          TextFormField(
-                            controller: _nameC,
-                            textInputAction: TextInputAction.next,
-                            maxLength: 24,
-                            style: TextStyle(
-                              color: isDark
-                                  ? Colors.white
-                                  : Colors.black87,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 16,
-                            ),
-                            decoration: _inputDeco(
-                              'Display Name',
-                              'Your name...',
-                              isDark,
-                            ),
-                            validator: (v) {
-                              final s = (v ?? '').trim();
-                              if (s.isEmpty) return 'Name required.';
-                              if (s.length < 2) return 'Too short.';
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 14),
-                          TextFormField(
-                            controller: _taglineC,
-                            textInputAction: TextInputAction.next,
-                            maxLength: 64,
-                            style: TextStyle(
-                              color: isDark
-                                  ? Colors.white
-                                  : Colors.black87,
-                              fontWeight: FontWeight.w600,
-                            ),
-                            decoration: _inputDeco(
-                              'Tagline (optional)',
-                              'What drives you?',
-                              isDark,
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-                          TextFormField(
-                            controller: _bioC,
-                            textInputAction: TextInputAction.newline,
-                            maxLength: 220,
-                            maxLines: 4,
-                            style: TextStyle(
-                              color: isDark
-                                  ? Colors.white
-                                  : Colors.black87,
-                              height: 1.4,
-                            ),
-                            decoration: _inputDeco(
-                              'Bio (optional)',
-                              'Share your journey...',
-                              isDark,
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-                          TextFormField(
-                            controller: _countryC,
-                            textInputAction: TextInputAction.done,
-                            maxLength: 2,
-                            textCapitalization:
-                            TextCapitalization.characters,
-                            style: TextStyle(
-                              color: isDark
-                                  ? Colors.white
-                                  : Colors.black87,
-                              fontWeight: FontWeight.w800,
-                            ),
-                            decoration: _inputDeco(
-                              'Country Code (e.g. BD)',
-                              'BD',
-                              isDark,
-                            ),
-                            onChanged: (v) {
-                              final norm = _normalizeCountry(v);
-                              if (norm != v) {
-                                _countryC.value = _countryC.value.copyWith(
-                                  text: norm,
-                                  selection:
-                                  TextSelection.collapsed(
-                                      offset: norm.length),
-                                );
-                              }
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-                    _buildGlass(
-                      isDark: isDark,
-                      child: Column(
-                        crossAxisAlignment:
-                        CrossAxisAlignment.start,
-                        children: [
-                          Row(
+                          const SizedBox(height: 24),
+
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: Colors.redAccent
-                                      .withOpacity(0.15),
-                                  borderRadius:
-                                  BorderRadius.circular(10),
-                                ),
-                                child: const Icon(
-                                  Icons.shield_rounded,
-                                  color: Colors.redAccent,
-                                  size: 18,
-                                ),
-                              ),
-                              const SizedBox(width: 10),
                               Text(
-                                'Privacy Settings',
+                                'Display Name *',
                                 style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w800,
+                                  color: isDark ? Colors.white70 : Colors.black54,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              TextFormField(
+                                controller: _nameC,
+                                textInputAction: TextInputAction.next,
+                                maxLength: 24,
+                                style: TextStyle(
+                                  color: isDark ? Colors.white : Colors.black87,
+                                  fontWeight: FontWeight.w700,
                                   fontSize: 16,
-                                  fontWeight: FontWeight.w900,
-                                  color: isDark
-                                      ? Colors.white
-                                      : Colors.black87,
                                 ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 20),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment:
-                                  CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Leaderboard Visibility',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w900,
-                                        fontSize: 14,
-                                        color: isDark
-                                            ? Colors.white
-                                            : Colors.black87,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 3),
-                                    Text(
-                                      _optedIn
-                                          ? 'Visible to everyone'
-                                          : 'Hidden from public',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: _optedIn
-                                            ? (isDark
-                                            ? Colors.white54
-                                            : Colors.black54)
-                                            : AppConfig.warningColor,
-                                      ),
-                                    ),
-                                  ],
+                                decoration: _inputDeco(
+                                  '',
+                                  'Your display name',
+                                  isDark,
+                                ).copyWith(
+                                  prefixIcon: Icon(
+                                    Icons.badge_rounded,
+                                    color: isDark ? Colors.white38 : Colors.black38,
+                                    size: 20,
+                                  ),
                                 ),
-                              ),
-                              Switch(
-                                activeColor: AppConfig.primaryColor,
-                                value: _optedIn,
-                                onChanged: (v) {
-                                  HapticFeedback.lightImpact();
-                                  SoundService.playTap();
-                                  setState(() {
-                                    _optedIn = v;
-                                    if (!v) {
-                                      _showLevel = false;
-                                      _showBadges = false;
-                                      _showStudyHours = false;
-                                    } else {
-                                      _showLevel = true;
-                                      _showBadges = true;
-                                      _showStudyHours = true;
-                                    }
-                                  });
+                                validator: (v) {
+                                  final s = (v ?? '').trim();
+                                  if (s.isEmpty) return 'Name required';
+                                  if (s.length < 2) return 'Too short';
+                                  return null;
                                 },
                               ),
                             ],
                           ),
+
+                          const SizedBox(height: 18),
+
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Tagline',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w800,
+                                  color: isDark ? Colors.white70 : Colors.black54,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              TextFormField(
+                                controller: _taglineC,
+                                textInputAction: TextInputAction.next,
+                                maxLength: 64,
+                                style: TextStyle(
+                                  color: isDark ? Colors.white : Colors.black87,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                decoration: _inputDeco(
+                                  '',
+                                  'What drives you?',
+                                  isDark,
+                                ).copyWith(
+                                  prefixIcon: Icon(
+                                    Icons.stars_rounded,
+                                    color: isDark ? Colors.white38 : Colors.black38,
+                                    size: 20,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+
+                          const SizedBox(height: 18),
+
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Bio',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w800,
+                                  color: isDark ? Colors.white70 : Colors.black54,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              TextFormField(
+                                controller: _bioC,
+                                textInputAction: TextInputAction.newline,
+                                maxLength: 220,
+                                maxLines: 4,
+                                style: TextStyle(
+                                  color: isDark ? Colors.white : Colors.black87,
+                                  height: 1.5,
+                                ),
+                                decoration: _inputDeco(
+                                  '',
+                                  'Share your journey...',
+                                  isDark,
+                                ).copyWith(
+                                  alignLabelWithHint: true,
+                                ),
+                              ),
+                            ],
+                          ),
+
+                          const SizedBox(height: 18),
+
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Country Code',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w800,
+                                  color: isDark ? Colors.white70 : Colors.black54,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              TextFormField(
+                                controller: _countryC,
+                                textInputAction: TextInputAction.done,
+                                maxLength: 2,
+                                textCapitalization: TextCapitalization.characters,
+                                style: TextStyle(
+                                  color: isDark ? Colors.white : Colors.black87,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 16,
+                                  letterSpacing: 2,
+                                ),
+                                decoration: _inputDeco(
+                                  '',
+                                  'BD',
+                                  isDark,
+                                ).copyWith(
+                                  prefixIcon: Icon(
+                                    Icons.flag_rounded,
+                                    color: isDark ? Colors.white38 : Colors.black38,
+                                    size: 20,
+                                  ),
+                                ),
+                                onChanged: (v) {
+                                  final norm = _normalizeCountry(v);
+                                  if (norm != v) {
+                                    _countryC.value = _countryC.value.copyWith(
+                                      text: norm,
+                                      selection:
+                                      TextSelection.collapsed(offset: norm.length),
+                                    );
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    _buildGlass(
+                      isDark: isDark,
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      Colors.amber.withOpacity(0.2),
+                                      Colors.orange.withOpacity(0.1),
+                                    ],
+                                  ),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Icon(
+                                  Icons.shield_rounded,
+                                  color: Colors.amber,
+                                  size: 20,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Privacy Settings',
+                                    style: TextStyle(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w900,
+                                      color: isDark ? Colors.white : Colors.black87,
+                                      letterSpacing: -0.3,
+                                    ),
+                                  ),
+                                  Text(
+                                    'Control what\'s visible',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: isDark ? Colors.white54 : Colors.black45,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 24),
+
+                          Container(
+                            padding: const EdgeInsets.all(18),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: _optedIn
+                                    ? [
+                                  AppConfig.successColor.withOpacity(0.15),
+                                  AppConfig.successColor.withOpacity(0.05),
+                                ]
+                                    : [
+                                  Colors.grey.withOpacity(0.15),
+                                  Colors.grey.withOpacity(0.05),
+                                ],
+                              ),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: _optedIn
+                                    ? AppConfig.successColor.withOpacity(0.3)
+                                    : Colors.grey.withOpacity(0.2),
+                                width: 1.5,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: (_optedIn
+                                        ? AppConfig.successColor
+                                        : Colors.grey)
+                                        .withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Icon(
+                                    _optedIn
+                                        ? Icons.visibility_rounded
+                                        : Icons.visibility_off_rounded,
+                                    color:
+                                    _optedIn ? AppConfig.successColor : Colors.grey,
+                                    size: 20,
+                                  ),
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Leaderboard Visibility',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w900,
+                                          fontSize: 15,
+                                          color: isDark ? Colors.white : Colors.black87,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        _optedIn
+                                            ? 'Visible to everyone'
+                                            : 'Hidden from public',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color:
+                                          _optedIn ? AppConfig.successColor : Colors.grey,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Transform.scale(
+                                  scale: 0.9,
+                                  child: Switch(
+                                    activeColor: AppConfig.successColor,
+                                    activeTrackColor:
+                                    AppConfig.successColor.withOpacity(0.5),
+                                    inactiveThumbColor: Colors.grey,
+                                    inactiveTrackColor: Colors.grey.withOpacity(0.3),
+                                    value: _optedIn,
+                                    onChanged: (v) {
+                                      HapticFeedback.mediumImpact();
+                                      SoundService.playTap();
+                                      setState(() {
+                                        _optedIn = v;
+                                        if (!v) {
+                                          _showLevel = false;
+                                          _showBadges = false;
+                                          _showStudyHours = false;
+                                        } else {
+                                          _showLevel = true;
+                                          _showBadges = true;
+                                          _showStudyHours = true;
+                                        }
+                                      });
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+
                           AnimatedSize(
-                            duration:
-                            const Duration(milliseconds: 300),
+                            duration: const Duration(milliseconds: 400),
+                            curve: Curves.easeOutCubic,
                             child: _optedIn
                                 ? Column(
                               children: [
                                 const SizedBox(height: 16),
-                                Divider(
-                                  color: isDark
-                                      ? Colors.white12
-                                      : Colors.black12,
-                                ),
-                                const SizedBox(height: 10),
-                                _privacyToggle(
-                                  isDark: isDark,
-                                  title: 'Show Level',
-                                  subtitle:
-                                  'Display level on leaderboard',
-                                  value: _showLevel,
-                                  onChanged: (v) =>
-                                      setState(() =>
-                                      _showLevel = v),
-                                ),
-                                _privacyToggle(
-                                  isDark: isDark,
-                                  title: 'Show Badges',
-                                  subtitle:
-                                  'Display unlocked badges',
-                                  value: _showBadges,
-                                  onChanged: (v) =>
-                                      setState(() =>
-                                      _showBadges = v),
-                                ),
-                                _privacyToggle(
-                                  isDark: isDark,
-                                  title: 'Show Study Hours',
-                                  subtitle:
-                                  'Display total study time',
-                                  value: _showStudyHours,
-                                  onChanged: (v) => setState(
-                                          () =>
-                                      _showStudyHours = v),
+                                Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: isDark
+                                        ? Colors.white.withOpacity(0.03)
+                                        : Colors.black.withOpacity(0.02),
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      _privacyToggle(
+                                        isDark: isDark,
+                                        title: 'Show Level',
+                                        subtitle: 'Display level on leaderboard',
+                                        value: _showLevel,
+                                        onChanged: (v) =>
+                                            setState(() => _showLevel = v),
+                                      ),
+                                      Divider(
+                                        height: 20,
+                                        color: isDark
+                                            ? Colors.white.withOpacity(0.08)
+                                            : Colors.black.withOpacity(0.06),
+                                      ),
+                                      _privacyToggle(
+                                        isDark: isDark,
+                                        title: 'Show Badges',
+                                        subtitle: 'Display unlocked badges',
+                                        value: _showBadges,
+                                        onChanged: (v) =>
+                                            setState(() => _showBadges = v),
+                                      ),
+                                      Divider(
+                                        height: 20,
+                                        color: isDark
+                                            ? Colors.white.withOpacity(0.08)
+                                            : Colors.black.withOpacity(0.06),
+                                      ),
+                                      _privacyToggle(
+                                        isDark: isDark,
+                                        title: 'Show Study Hours',
+                                        subtitle: 'Display total study time',
+                                        value: _showStudyHours,
+                                        onChanged: (v) =>
+                                            setState(() => _showStudyHours = v),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ],
                             )
@@ -2872,133 +2915,168 @@ class _LeaderboardProfileScreenState
                         ],
                       ),
                     ),
-                    const SizedBox(height: 18),
+
+                    const SizedBox(height: 20),
+
                     GestureDetector(
                       onTap: () => _showBlocklistSheet(isDark),
                       child: _buildGlass(
                         isDark: isDark,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 20, vertical: 16),
+                        padding: const EdgeInsets.all(20),
                         child: Row(
                           children: [
                             Container(
-                              padding: const EdgeInsets.all(8),
+                              padding: const EdgeInsets.all(10),
                               decoration: BoxDecoration(
-                                color: Colors.grey.withOpacity(0.15),
-                                borderRadius:
-                                BorderRadius.circular(10),
+                                color: Colors.red.withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(12),
                               ),
                               child: const Icon(
                                 Icons.block_rounded,
-                                color: Colors.grey,
-                                size: 18,
+                                color: Colors.redAccent,
+                                size: 20,
                               ),
                             ),
-                            const SizedBox(width: 12),
+                            const SizedBox(width: 14),
                             Expanded(
-                              child: Text(
-                                'Manage Blocked Users',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 15,
-                                  color: isDark
-                                      ? Colors.white
-                                      : Colors.black87,
-                                ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Manage Blocked Users',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 15,
+                                      color: isDark ? Colors.white : Colors.black87,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    'View and unblock users',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: isDark ? Colors.white54 : Colors.black45,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                             Icon(
                               Icons.chevron_right_rounded,
-                              color: isDark
-                                  ? Colors.white38
-                                  : Colors.black38,
+                              color: isDark ? Colors.white38 : Colors.black38,
+                              size: 24,
                             ),
                           ],
                         ),
                       ),
                     ),
-                    const SizedBox(height: 28),
+
+                    const SizedBox(height: 32),
+
                     GestureDetector(
                       onTap: _saving ? null : _save,
                       child: Container(
                         width: double.infinity,
-                        padding: const EdgeInsets.symmetric(
-                            vertical: 18),
+                        height: 60,
                         decoration: BoxDecoration(
-                          gradient: LinearGradient(
+                          gradient: const LinearGradient(
                             colors: [
                               AppConfig.primaryColor,
-                              AppConfig.primaryColor
-                                  .withOpacity(0.8),
+                              Color(0xFF3B82F6),
                             ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
                           ),
-                          borderRadius:
-                          BorderRadius.circular(22),
+                          borderRadius: BorderRadius.circular(18),
                           boxShadow: [
                             BoxShadow(
-                              color: AppConfig.primaryColor
-                                  .withOpacity(0.4),
-                              blurRadius: 22,
-                              offset: const Offset(0, 8),
+                              color: AppConfig.primaryColor.withOpacity(0.5),
+                              blurRadius: 28,
+                              offset: const Offset(0, 12),
+                            ),
+                            BoxShadow(
+                              color: AppConfig.primaryColor.withOpacity(0.2),
+                              blurRadius: 16,
+                              offset: const Offset(0, 6),
                             ),
                           ],
                         ),
                         child: Center(
                           child: _saving
                               ? const SizedBox(
-                            width: 24,
-                            height: 24,
-                            child:
-                            CircularProgressIndicator(
+                            width: 26,
+                            height: 26,
+                            child: CircularProgressIndicator(
                               color: Colors.white,
-                              strokeWidth: 2.5,
+                              strokeWidth: 3,
                             ),
                           )
-                              : const Text(
-                            'Save Profile',
-                            style: TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w900,
-                              color: Colors.white,
-                            ),
+                              : Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.check_circle_rounded,
+                                color: Colors.white,
+                                size: 22,
+                              ),
+                              const SizedBox(width: 10),
+                              Text(
+                                'Save Profile',
+                                style: const TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w900,
+                                  color: Colors.white,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
                     ),
+
                     if (_existing != null) ...[
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 14),
                       TextButton(
                         onPressed: _exitEditMode,
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
                         child: Text(
                           'Cancel',
                           style: TextStyle(
-                            color: isDark
-                                ? Colors.white60
-                                : Colors.black54,
+                            color: isDark ? Colors.white60 : Colors.black54,
                             fontWeight: FontWeight.w800,
+                            fontSize: 15,
                           ),
                         ),
                       ),
                     ],
+
                     if (_existing != null) ...[
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 4),
                       TextButton.icon(
-                        onPressed:
-                        _saving ? null : _deleteCloudProfile,
+                        onPressed: _saving ? null : _deleteCloudProfile,
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
                         icon: const Icon(
                           Icons.delete_forever_rounded,
                           color: AppConfig.errorColor,
+                          size: 20,
                         ),
                         label: const Text(
                           'Delete Cloud Profile',
                           style: TextStyle(
                             color: AppConfig.errorColor,
                             fontWeight: FontWeight.w800,
+                            fontSize: 14,
                           ),
                         ),
                       ),
                     ],
-                    const SizedBox(height: 40),
+
+                    const SizedBox(height: 30),
                   ],
                 ),
               ),
@@ -3017,129 +3095,231 @@ class _LeaderboardProfileScreenState
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (ctx) => ClipRRect(
-        borderRadius:
-        const BorderRadius.vertical(top: Radius.circular(32)),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+          filter: ImageFilter.blur(sigmaX: 40, sigmaY: 40),
           child: Container(
-            height: MediaQuery.of(context).size.height * 0.6,
-            padding:
-            const EdgeInsets.fromLTRB(20, 16, 20, 20),
+            height: MediaQuery.of(context).size.height * 0.7,
             decoration: BoxDecoration(
-              color: (isDark
-                  ? const Color(0xFF151C2F)
-                  : Colors.white)
-                  .withOpacity(0.9),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: isDark
+                    ? [
+                  const Color(0xFF151C2F).withOpacity(0.95),
+                  const Color(0xFF0B1020).withOpacity(0.98),
+                ]
+                    : [
+                  Colors.white.withOpacity(0.95),
+                  const Color(0xFFF8FAFC).withOpacity(0.98),
+                ],
+              ),
             ),
             child: Column(
               children: [
+                const SizedBox(height: 12),
                 Container(
-                  width: 48,
+                  width: 50,
                   height: 5,
                   decoration: BoxDecoration(
-                    color: isDark
-                        ? Colors.white24
-                        : Colors.black12,
+                    color: isDark ? Colors.white30 : Colors.black12,
                     borderRadius: BorderRadius.circular(3),
                   ),
                 ),
-                const SizedBox(height: 20),
-                Row(
-                  mainAxisAlignment:
-                  MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Blocked Users',
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900,
-                        color: isDark
-                            ? Colors.white
-                            : Colors.black87,
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 20, 20, 8),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.block_rounded,
+                          color: Colors.redAccent,
+                          size: 22,
+                        ),
                       ),
-                    ),
-                    IconButton(
-                      onPressed: () => Navigator.pop(ctx),
-                      icon: Icon(
-                        Icons.close_rounded,
-                        color: isDark
-                            ? Colors.white70
-                            : Colors.black54,
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Blocked Users',
+                              style: TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w900,
+                                color: isDark ? Colors.white : Colors.black87,
+                                letterSpacing: -0.5,
+                              ),
+                            ),
+                            Text(
+                              'Manage your blocklist',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: isDark ? Colors.white54 : Colors.black45,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                      IconButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        icon: Icon(
+                          Icons.close_rounded,
+                          color: isDark ? Colors.white70 : Colors.black54,
+                          size: 26,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 10),
+                Divider(
+                  height: 1,
+                  thickness: 1,
+                  color: isDark
+                      ? Colors.white.withOpacity(0.08)
+                      : Colors.black.withOpacity(0.06),
+                ),
+                const SizedBox(height: 12),
                 Expanded(
                   child: ValueListenableBuilder<Set<String>>(
-                    valueListenable: LeaderboardModerationService
-                        .blockedUidsNotifier,
+                    valueListenable:
+                    LeaderboardModerationService.blockedUidsNotifier,
                     builder: (context, blocked, _) {
                       if (blocked.isEmpty) {
                         return Center(
-                          child: Text(
-                            'No blocked users.',
-                            style: TextStyle(
-                              color: isDark
-                                  ? Colors.white54
-                                  : Colors.black54,
-                              fontWeight: FontWeight.w600,
-                            ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(24),
+                                decoration: BoxDecoration(
+                                  color: isDark
+                                      ? Colors.white.withOpacity(0.04)
+                                      : Colors.black.withOpacity(0.03),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  Icons.verified_user_rounded,
+                                  size: 64,
+                                  color: isDark ? Colors.white38 : Colors.black26,
+                                ),
+                              ),
+                              const SizedBox(height: 20),
+                              Text(
+                                'No blocked users',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w900,
+                                  color: isDark ? Colors.white54 : Colors.black54,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'You haven\'t blocked anyone yet',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: isDark ? Colors.white38 : Colors.black38,
+                                ),
+                              ),
+                            ],
                           ),
                         );
                       }
                       return ListView.builder(
-                        physics:
-                        const BouncingScrollPhysics(),
+                        physics: const BouncingScrollPhysics(),
+                        padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
                         itemCount: blocked.length,
                         itemBuilder: (context, i) {
                           final uid = blocked.elementAt(i);
                           return Container(
-                            margin:
-                            const EdgeInsets.only(bottom: 10),
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 12),
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
-                              color: isDark
-                                  ? Colors.white
-                                  .withOpacity(0.05)
-                                  : Colors.black
-                                  .withOpacity(0.03),
-                              borderRadius:
-                              BorderRadius.circular(14),
+                              gradient: LinearGradient(
+                                colors: isDark
+                                    ? [
+                                  Colors.white.withOpacity(0.06),
+                                  Colors.white.withOpacity(0.03),
+                                ]
+                                    : [
+                                  Colors.black.withOpacity(0.03),
+                                  Colors.black.withOpacity(0.02),
+                                ],
+                              ),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: isDark
+                                    ? Colors.white.withOpacity(0.08)
+                                    : Colors.black.withOpacity(0.06),
+                              ),
                             ),
                             child: Row(
                               children: [
-                                const Icon(
-                                  Icons.person_off_rounded,
-                                  color: AppConfig.errorColor,
+                                Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.withOpacity(0.15),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: const Icon(
+                                    Icons.person_off_rounded,
+                                    color: Colors.redAccent,
+                                    size: 20,
+                                  ),
                                 ),
-                                const SizedBox(width: 12),
+                                const SizedBox(width: 14),
                                 Expanded(
-                                  child: Text(
-                                    'User: ${uid.length > 12 ? uid.substring(0, 12) : uid}...',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      color: isDark
-                                          ? Colors.white
-                                          : Colors.black87,
-                                    ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Blocked User',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w900,
+                                          fontSize: 14,
+                                          color: isDark ? Colors.white : Colors.black87,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        uid.length > 16
+                                            ? '${uid.substring(0, 16)}...'
+                                            : uid,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: isDark ? Colors.white38 : Colors.black38,
+                                          fontFamily: 'monospace',
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                                 TextButton(
                                   onPressed: () async {
-                                    await LeaderboardModerationService
-                                        .unblockUid(uid);
+                                    HapticFeedback.lightImpact();
+                                    await LeaderboardModerationService.unblockUid(uid);
                                     SoundService.playTap();
                                   },
                                   style: TextButton.styleFrom(
-                                    foregroundColor:
-                                    AppConfig.primaryColor,
+                                    foregroundColor: AppConfig.primaryColor,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 10,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
                                   ),
                                   child: const Text(
                                     'Unblock',
                                     style: TextStyle(
                                       fontWeight: FontWeight.w800,
+                                      fontSize: 13,
                                     ),
                                   ),
                                 ),
@@ -3200,9 +3380,7 @@ class _ViewStatBox extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.w800,
-                    color: isDark
-                        ? Colors.white54
-                        : Colors.black45,
+                    color: isDark ? Colors.white54 : Colors.black45,
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -3239,19 +3417,15 @@ class _MyProfileLikerTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<Map<String, dynamic>?>(
-      future:
-      ProfileLikeService.instance.getLikerProfile(liker.uid),
+      future: ProfileLikeService.instance.getLikerProfile(liker.uid),
       builder: (context, snap) {
         final data = snap.data;
-        final name =
-            (data?['displayName'] as String?) ?? 'Player';
-        final avatar =
-            (data?['avatarEmoji'] as String?) ?? '🙂';
+        final name = (data?['displayName'] as String?) ?? 'Player';
+        final avatar = (data?['avatarEmoji'] as String?) ?? '🙂';
 
         return Container(
           margin: const EdgeInsets.only(bottom: 10),
-          padding:
-          const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
             color: isDark
                 ? Colors.white.withOpacity(0.04)
@@ -3282,17 +3456,14 @@ class _MyProfileLikerTile extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
-                  crossAxisAlignment:
-                  CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       name,
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w800,
-                        color: isDark
-                            ? Colors.white
-                            : Colors.black87,
+                        color: isDark ? Colors.white : Colors.black87,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -3300,9 +3471,7 @@ class _MyProfileLikerTile extends StatelessWidget {
                       formatTime(liker.likedAt),
                       style: TextStyle(
                         fontSize: 11.5,
-                        color: isDark
-                            ? Colors.white38
-                            : Colors.black38,
+                        color: isDark ? Colors.white38 : Colors.black38,
                       ),
                     ),
                   ],

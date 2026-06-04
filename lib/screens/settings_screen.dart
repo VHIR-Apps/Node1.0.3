@@ -212,7 +212,6 @@ class _SettingsScreenState extends State<SettingsScreen>
       if (canLaunch) {
         await launchUrl(emailUri, mode: LaunchMode.externalApplication);
       } else {
-        // ✅ Fallback: Show dialog with email
         if (mounted) _showSupportEmailDialog();
       }
     } catch (e) {
@@ -2082,6 +2081,103 @@ class _SettingsScreenState extends State<SettingsScreen>
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
+    // --- COMMUNITY & SOCIAL LINKS ---
+    final List<Widget> socialTiles = [];
+    if (AppConfig.telegramUrl.isNotEmpty) {
+      socialTiles.add(_premiumTile(
+        icon: Icons.send_rounded,
+        gradient: [const Color(0xFF0088cc), const Color(0xFF00aaff)],
+        title: 'Telegram',
+        subtitle: 'Join our community',
+        isDark: isDark,
+        onTap: () => UrlService.openUrl(AppConfig.telegramUrl, context),
+      ));
+    }
+    if (AppConfig.youtubeUrl.isNotEmpty) {
+      socialTiles.add(_premiumTile(
+        icon: Icons.play_circle_fill_rounded,
+        gradient: [const Color(0xFFFF0000), const Color(0xFFFF4D4D)],
+        title: 'YouTube',
+        subtitle: 'Watch our tutorials',
+        isDark: isDark,
+        onTap: () => UrlService.openUrl(AppConfig.youtubeUrl, context),
+      ));
+    }
+    if (AppConfig.facebookUrl.isNotEmpty) {
+      socialTiles.add(_premiumTile(
+        icon: Icons.facebook_rounded,
+        gradient: [const Color(0xFF1877F2), const Color(0xFF4267B2)],
+        title: 'Facebook',
+        subtitle: 'Follow our page',
+        isDark: isDark,
+        onTap: () => UrlService.openUrl(AppConfig.facebookUrl, context),
+      ));
+    }
+
+    // --- SUPPORT US (Play Store Links) ---
+    final List<Widget> playStoreTiles = [];
+    if (AppConfig.playStoreRateUrl.isNotEmpty) {
+      playStoreTiles.add(_premiumTile(
+        icon: Icons.star_rounded,
+        gradient: [const Color(0xFFFFD700), const Color(0xFFF59E0B)],
+        title: 'Rate App',
+        subtitle: 'Love the app? Rate us 5 stars!',
+        isDark: isDark,
+        onTap: () => UrlService.openUrl(AppConfig.playStoreRateUrl, context),
+      ));
+    }
+    if (AppConfig.playStoreDeveloperUrl.isNotEmpty) {
+      playStoreTiles.add(_premiumTile(
+        icon: Icons.apps_rounded,
+        gradient: [const Color(0xFF10B981), const Color(0xFF059669)],
+        title: 'More Apps',
+        subtitle: 'Explore our other apps',
+        isDark: isDark,
+        onTap: () => UrlService.openUrl(AppConfig.playStoreDeveloperUrl, context),
+      ));
+    }
+
+    // --- ABOUT & LEGAL LINKS ---
+    final List<Widget> legalTiles = [];
+    if (AppConfig.websiteUrl.isNotEmpty) {
+      legalTiles.add(_premiumTile(
+        icon: Icons.language_rounded,
+        gradient: [Colors.teal, Colors.tealAccent],
+        title: 'Website',
+        subtitle: 'Visit our official website',
+        isDark: isDark,
+        onTap: () => UrlService.openUrl(AppConfig.websiteUrl, context),
+      ));
+    }
+    if (AppConfig.privacyPolicyUrl.isNotEmpty) {
+      legalTiles.add(_premiumTile(
+        icon: Icons.privacy_tip_rounded,
+        gradient: [Colors.grey.shade600, Colors.grey.shade800],
+        title: 'Privacy Policy',
+        subtitle: 'Read our data policy',
+        isDark: isDark,
+        onTap: () => UrlService.openUrl(AppConfig.privacyPolicyUrl, context),
+      ));
+    }
+    if (AppConfig.termsUrl.isNotEmpty) {
+      legalTiles.add(_premiumTile(
+        icon: Icons.description_rounded,
+        gradient: [Colors.grey.shade600, Colors.grey.shade800],
+        title: 'Terms of Service',
+        subtitle: 'App rules and guidelines',
+        isDark: isDark,
+        onTap: () => UrlService.openUrl(AppConfig.termsUrl, context),
+      ));
+    }
+    // Version tile (always visible)
+    legalTiles.add(_premiumTile(
+      icon: Icons.code_rounded,
+      gradient: [AppConfig.primaryColor, AppConfig.accentColor],
+      title: 'Version ${AppConfig.version}',
+      subtitle: 'Developed by ${AppConfig.developerName}',
+      isDark: isDark,
+    ));
+
     return Scaffold(
       extendBodyBehindAppBar: true,
       backgroundColor:
@@ -2345,7 +2441,25 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ], isDark),
 
                     // ═══════════════════════════════════════
-                    // 📧 NEW: HELP & SUPPORT SECTION
+                    // COMMUNITY & SOCIAL LINKS (Conditional)
+                    // ═══════════════════════════════════════
+                    if (socialTiles.isNotEmpty) ...[
+                      _sectionHeader('Community & Social',
+                          icon: Icons.public_rounded),
+                      _buildTileGroup(socialTiles, isDark),
+                    ],
+
+                    // ═══════════════════════════════════════
+                    // SUPPORT US / MORE APPS (Conditional)
+                    // ═══════════════════════════════════════
+                    if (playStoreTiles.isNotEmpty) ...[
+                      _sectionHeader('Support Us',
+                          icon: Icons.favorite_rounded),
+                      _buildTileGroup(playStoreTiles, isDark),
+                    ],
+
+                    // ═══════════════════════════════════════
+                    // HELP & SUPPORT
                     // ═══════════════════════════════════════
                     _sectionHeader('Help & Support',
                         icon: Icons.support_agent_rounded),
@@ -2385,6 +2499,9 @@ class _SettingsScreenState extends State<SettingsScreen>
                       ),
                     ], isDark),
 
+                    // ═══════════════════════════════════════
+                    // DANGER ZONE
+                    // ═══════════════════════════════════════
                     _sectionHeader('Danger Zone',
                         icon: Icons.warning_rounded),
                     _buildTileGroup([
@@ -2405,45 +2522,16 @@ class _SettingsScreenState extends State<SettingsScreen>
                         onTap: _deleteAllHabits,
                       ),
                     ], isDark),
-                    _sectionHeader('About & Legal',
-                        icon: Icons.info_rounded),
-                    _buildTileGroup([
-                      _premiumTile(
-                        icon: Icons.privacy_tip_rounded,
-                        gradient: [
-                          Colors.grey.shade600,
-                          Colors.grey.shade800,
-                        ],
-                        title: 'Privacy Policy',
-                        subtitle: 'Read our data policy',
-                        isDark: isDark,
-                        onTap: () => UrlService.openUrl(
-                            AppConfig.privacyPolicyUrl, context),
-                      ),
-                      _premiumTile(
-                        icon: Icons.description_rounded,
-                        gradient: [
-                          Colors.grey.shade600,
-                          Colors.grey.shade800,
-                        ],
-                        title: 'Terms of Service',
-                        subtitle: 'App rules and guidelines',
-                        isDark: isDark,
-                        onTap: () => UrlService.openUrl(
-                            AppConfig.termsUrl, context),
-                      ),
-                      _premiumTile(
-                        icon: Icons.code_rounded,
-                        gradient: [
-                          AppConfig.primaryColor,
-                          AppConfig.accentColor,
-                        ],
-                        title: 'Version ${AppConfig.version}',
-                        subtitle:
-                        'Developed by ${AppConfig.developerName}',
-                        isDark: isDark,
-                      ),
-                    ], isDark),
+
+                    // ═══════════════════════════════════════
+                    // ABOUT & LEGAL (Conditional)
+                    // ═══════════════════════════════════════
+                    if (legalTiles.isNotEmpty) ...[
+                      _sectionHeader('About & Legal',
+                          icon: Icons.info_rounded),
+                      _buildTileGroup(legalTiles, isDark),
+                    ],
+
                     const SizedBox(height: 30),
                   ]),
                 ),

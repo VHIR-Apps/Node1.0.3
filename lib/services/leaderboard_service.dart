@@ -246,10 +246,17 @@ class LeaderboardService {
     return (now - lastResetMs) > dayMs;
   }
 
+  // ✅ প্রতি রবিবার রাত ১২ টায় রিসেট করার লজিক
   bool _needsWeeklyReset(int lastResetMs) {
-    final now = DateTime.now().toUtc().millisecondsSinceEpoch;
-    const weekMs = 7 * 24 * 60 * 60 * 1000;
-    return (now - lastResetMs) > weekMs;
+    if (lastResetMs <= 0) return true;
+    final now = DateTime.now();
+    final lastReset = DateTime.fromMillisecondsSinceEpoch(lastResetMs);
+
+    int daysToSubtract = now.weekday == 7 ? 0 : now.weekday;
+    DateTime lastSunday = DateTime(now.year, now.month, now.day)
+        .subtract(Duration(days: daysToSubtract));
+
+    return lastReset.isBefore(lastSunday);
   }
 
   Future<LeaderboardProfileModel> _autoResetScores(

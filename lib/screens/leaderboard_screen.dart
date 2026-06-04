@@ -19,7 +19,6 @@ import '../services/purchase_service.dart';
 import '../services/sound_service.dart';
 import 'leaderboard_profile_screen.dart';
 import 'public_leaderboard_profile_screen.dart';
-import 'leaderboard_social_tab.dart';
 import 'inbox_screen.dart';
 import 'chat_screen.dart';
 
@@ -90,8 +89,9 @@ class _LeaderboardScreenState
   @override
   void initState() {
     super.initState();
+    // ✅ ২টা ট্যাবের জন্য length: 2 করা হলো
     _tabController = TabController(
-        length: 3, vsync: this, initialIndex: 0);
+        length: 2, vsync: this, initialIndex: 0);
     _lastTabIndex = _tabController.index;
     _tabController.addListener(_onTabChanged);
     LeaderboardModerationService.init();
@@ -360,11 +360,6 @@ class _LeaderboardScreenState
     if (idx == _lastTabIndex) return;
     _lastTabIndex = idx;
 
-    if (idx == 2) {
-      setState(() {});
-      return;
-    }
-
     final nextPeriod = switch (idx) {
       0 => LeaderboardPeriod.weekly,
       _ => LeaderboardPeriod.allTime,
@@ -394,12 +389,11 @@ class _LeaderboardScreenState
         .getLeaderboardProfileForUid(user.uid);
     if (local == null || !local.isOptedIn) return;
     _activeUid = user.uid;
-    if (_tabController.index != 2) {
-      await _ensurePeriodLoaded(
-          period: _currentPeriod,
-          syncBeforeFetch: true,
-          haptic: false);
-    }
+
+    await _ensurePeriodLoaded(
+        period: _currentPeriod,
+        syncBeforeFetch: true,
+        haptic: false);
   }
 
   Future<void> _ensurePeriodLoaded({
@@ -408,7 +402,7 @@ class _LeaderboardScreenState
     required bool haptic,
     bool forceRefresh = false,
   }) async {
-    if (!mounted || _tabController.index == 2) return;
+    if (!mounted) return;
     final alreadyLoaded =
         _topByPeriod[period] != null;
     final currentlyLoading =
@@ -695,7 +689,7 @@ class _LeaderboardScreenState
                                   const SizedBox(
                                       height: 3),
                                   Text(
-                                      'Rank #$rank • Score ${_getScoreForEntry(entry)}',
+                                      'Rank #$rank • Score ${_getScoreForEntry(entry)} XP',
                                       style: TextStyle(
                                           fontSize:
                                           12.5,
@@ -1387,7 +1381,7 @@ class _LeaderboardScreenState
     );
   }
 
-  // ✅ Tab bar — YOU LIKED tab
+  // ✅ Tab bar — Removed "YOU LIKED"
   Widget _buildGlassTabBar(bool isDark) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(18),
@@ -1452,11 +1446,10 @@ class _LeaderboardScreenState
             unselectedLabelColor: isDark
                 ? Colors.white60
                 : Colors.black54,
-            // ✅ YOU LIKED tab
+            // ✅ Only 2 Tabs
             tabs: const [
               Tab(text: 'WEEKLY'),
               Tab(text: 'ALL-TIME'),
-              Tab(text: 'YOU LIKED'),
             ],
           ),
         ),
@@ -1787,81 +1780,73 @@ class _LeaderboardScreenState
               _buildGlassTabBar(isDark),
               const SizedBox(height: 12),
 
-              // ✅ Tab 2 = YOU LIKED
-              if (_tabController.index == 2)
-                LeaderboardSocialFeedTab(
-                  activeUid: _activeUid,
-                  isDark: isDark,
-                  cachedUsers: top, // ✅ এই লাইনটাই মিসিং ছিল
+              if (_isCurrentLoading)
+                Container(
+                  margin:
+                  const EdgeInsets.only(
+                      bottom: 10),
+                  padding: const EdgeInsets
+                      .symmetric(
+                      horizontal: 12,
+                      vertical: 10),
+                  decoration: BoxDecoration(
+                      color: (isDark
+                          ? Colors.white
+                          : Colors.black)
+                          .withOpacity(0.04),
+                      borderRadius:
+                      BorderRadius
+                          .circular(16),
+                      border: Border.all(
+                          color: (isDark
+                              ? Colors
+                              .white
+                              : Colors
+                              .black)
+                              .withOpacity(
+                              0.06))),
+                  child: Row(children: [
+                    const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child:
+                        CircularProgressIndicator(
+                            strokeWidth:
+                            2.4,
+                            color: AppConfig
+                                .primaryColor)),
+                    const SizedBox(width: 10),
+                    Expanded(
+                        child: Text(
+                            'Loading...',
+                            style: TextStyle(
+                                fontWeight:
+                                FontWeight
+                                    .w700,
+                                color: isDark
+                                    ? Colors
+                                    .white70
+                                    : Colors
+                                    .black54))),
+                  ]),
                 )
-              else ...[
-                if (_isCurrentLoading)
-                  Container(
-                    margin:
-                    const EdgeInsets.only(
-                        bottom: 10),
-                    padding: const EdgeInsets
-                        .symmetric(
-                        horizontal: 12,
-                        vertical: 10),
-                    decoration: BoxDecoration(
-                        color: (isDark
-                            ? Colors.white
-                            : Colors.black)
-                            .withOpacity(0.04),
-                        borderRadius:
-                        BorderRadius
-                            .circular(16),
-                        border: Border.all(
-                            color: (isDark
+              else if (_currentError.isNotEmpty &&
+                  top.isEmpty &&
+                  !_isCurrentLoading)
+                _glassCard(
+                    child: Text(
+                        _currentError,
+                        style: TextStyle(
+                            height: 1.35,
+                            color: isDark
                                 ? Colors
-                                .white
+                                .white70
                                 : Colors
-                                .black)
-                                .withOpacity(
-                                0.06))),
-                    child: Row(children: [
-                      const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child:
-                          CircularProgressIndicator(
-                              strokeWidth:
-                              2.4,
-                              color: AppConfig
-                                  .primaryColor)),
-                      const SizedBox(width: 10),
-                      Expanded(
-                          child: Text(
-                              'Loading...',
-                              style: TextStyle(
-                                  fontWeight:
-                                  FontWeight
-                                      .w700,
-                                  color: isDark
-                                      ? Colors
-                                      .white70
-                                      : Colors
-                                      .black54))),
-                    ]),
-                  ),
-                if (_currentError.isNotEmpty &&
-                    top.isEmpty &&
-                    !_isCurrentLoading)
-                  _glassCard(
-                      child: Text(
-                          _currentError,
-                          style: TextStyle(
-                              height: 1.35,
-                              color: isDark
-                                  ? Colors
-                                  .white70
-                                  : Colors
-                                  .black87,
-                              fontWeight:
-                              FontWeight
-                                  .w700)))
-                else if (top.isEmpty &&
+                                .black87,
+                            fontWeight:
+                            FontWeight
+                                .w700)))
+              else if (top.isEmpty &&
                     !_isCurrentLoading)
                   _glassCard(
                       child: Text(
@@ -1897,20 +1882,19 @@ class _LeaderboardScreenState
                             child: Column(
                                 children:
                                 visibleTiles))),
-                const SizedBox(height: 10),
-                if (blockedCount > 0)
-                  Text(
-                      'Blocked: $blockedCount hidden',
-                      textAlign:
-                      TextAlign.center,
-                      style: TextStyle(
-                          fontSize: 11.5,
-                          color: isDark
-                              ? Colors.white38
-                              : Colors.black38,
-                          fontWeight:
-                          FontWeight.w600)),
-              ],
+              const SizedBox(height: 10),
+              if (blockedCount > 0)
+                Text(
+                    'Blocked: $blockedCount hidden',
+                    textAlign:
+                    TextAlign.center,
+                    style: TextStyle(
+                        fontSize: 11.5,
+                        color: isDark
+                            ? Colors.white38
+                            : Colors.black38,
+                        fontWeight:
+                        FontWeight.w600)),
             ],
           );
         },
