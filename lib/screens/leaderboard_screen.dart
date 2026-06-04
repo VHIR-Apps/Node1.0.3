@@ -1790,8 +1790,10 @@ class _LeaderboardScreenState
               // ✅ Tab 2 = YOU LIKED
               if (_tabController.index == 2)
                 LeaderboardSocialFeedTab(
-                    activeUid: _activeUid,
-                    isDark: isDark)
+                  activeUid: _activeUid,
+                  isDark: isDark,
+                  cachedUsers: top, // ✅ এই লাইনটাই মিসিং ছিল
+                )
               else ...[
                 if (_isCurrentLoading)
                   Container(

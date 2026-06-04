@@ -10,19 +10,22 @@ import '../config/app_config.dart';
 import '../models/leaderboard_profile_model.dart';
 import '../services/auth_service.dart';
 import '../services/sound_service.dart';
+import '../services/leaderboard_service.dart'; // ✅ লিডারবোর্ড সার্ভিস ইমপোর্ট করা হলো
 
 /// ═════════════════════════════════════════════════
-/// SOCIAL TAB — আমি যাদের Like করেছি তাদের list
+/// SOCIAL TAB — আমি যাদের Like করেছি তাদের list (100% Private)
 /// ═════════════════════════════════════════════════
 class LeaderboardSocialFeedTab extends StatefulWidget {
   const LeaderboardSocialFeedTab({
     super.key,
     required this.activeUid,
     required this.isDark,
+    required this.cachedUsers, // ✅ লিডারবোর্ডের লোড হওয়া ডেটা
   });
 
   final String? activeUid;
   final bool isDark;
+  final List<LeaderboardEntry> cachedUsers;
 
   @override
   State<LeaderboardSocialFeedTab> createState() =>
@@ -42,7 +45,9 @@ class _LeaderboardSocialFeedTabState
 
   Future<void> _loadLikedProfiles() async {
     final myUid = widget.activeUid;
-    if (myUid == null || myUid.isEmpty) {
+
+    // যদি আমার UID না থাকে বা লিডারবোর্ড খালি থাকে, তবে রিটার্ন করবে
+    if (myUid == null || myUid.isEmpty || widget.cachedUsers.isEmpty) {
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -57,61 +62,45 @@ class _LeaderboardSocialFeedTabState
     }
 
     try {
-      // ✅ Step 1: সব user profile load করো
-      // তারপর check করো আমি কাকে কাকে like করেছি
-      final usersSnap = await FirebaseFirestore.instance
-          .collection('leaderboard_v1_users')
-          .get(_safeGetOptions())
-          .timeout(const Duration(seconds: 10));
-
-      final List<_LikedProfile> results = [];
-
-      for (final userDoc in usersSnap.docs) {
-        if (userDoc.id == myUid) continue;
+      // ✅ লিডারবোর্ডের লিস্ট থেকে Future.wait ব্যবহার করে শুধু নিজের লাইকগুলো খুঁজছি
+      final futures = widget.cachedUsers.map((entry) async {
+        if (entry.uid == myUid) return null; // নিজেকে স্কিপ করো
 
         try {
-          // Check: আমি এই user কে like করেছি কিনা
-          final likeDoc = await FirebaseFirestore
-              .instance
+          // Check: আমি (myUid) এই ইউজারকে (entry.uid) লাইক করেছি কিনা
+          final likeDoc = await FirebaseFirestore.instance
               .collection('leaderboard_v1_users')
-              .doc(userDoc.id)
+              .doc(entry.uid)
               .collection('likes')
               .doc(myUid)
-              .get(_safeGetOptions());
+              .get(const GetOptions(source: Source.serverAndCache));
 
           if (likeDoc.exists) {
-            final userData = userDoc.data();
-            final likeData = likeDoc.data();
-            final likedAt =
-            likeData?['likedAt'] as Timestamp?;
+            final likedAt = likeDoc.data()?['likedAt'] as Timestamp?;
 
-            results.add(_LikedProfile(
-              uid: userDoc.id,
-              displayName:
-              (userData['displayName'] as String?) ??
-                  'Player',
-              avatarEmoji:
-              (userData['avatarEmoji'] as String?) ??
-                  '🙂',
-              score: (userData['metrics']
-              ?['score'] as num?)
-                  ?.toDouble() ??
-                  0.0,
-              level:
-              (userData['metrics']?['level'] as int?) ??
-                  0,
-              likedAtMs: likedAt?.millisecondsSinceEpoch ??
-                  0,
-            ));
+            return _LikedProfile(
+              uid: entry.uid,
+              displayName: entry.displayName,
+              avatarEmoji: entry.avatarEmoji.isEmpty ? '🙂' : entry.avatarEmoji,
+              score: entry.score,
+              level: entry.level,
+              likedAtMs: likedAt?.millisecondsSinceEpoch ?? 0,
+            );
           }
         } catch (_) {
-          // Single user check fail — skip
+          // সিঙ্গেল ইউজার চেক ফেইল হলে স্কিপ করবে
         }
-      }
+        return null;
+      }).toList();
+
+      // সব রিকোয়েস্ট একবারে প্রসেস হওয়ার জন্য অপেক্ষা করা
+      final resolvedProfiles = await Future.wait(futures);
+
+      // null ভ্যালু বাদ দিয়ে আসল লিস্ট তৈরি
+      final List<_LikedProfile> results = resolvedProfiles.whereType<_LikedProfile>().toList();
 
       // Sort: সবচেয়ে recent like আগে
-      results.sort(
-              (a, b) => b.likedAtMs.compareTo(a.likedAtMs));
+      results.sort((a, b) => b.likedAtMs.compareTo(a.likedAtMs));
 
       if (mounted) {
         setState(() {
@@ -121,92 +110,20 @@ class _LeaderboardSocialFeedTabState
       }
     } catch (e) {
       debugPrint('⚠️ Liked profiles load error: $e');
-
-      // ✅ Offline fallback — cache থেকে try করো
-      // Error UI দেখাবে না
-      try {
-        await _loadFromCache(myUid);
-      } catch (_) {
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-            // ✅ Error দেখাবে না — empty list দেখাবে
-          });
-        }
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
       }
     }
   }
 
-  Future<void> _loadFromCache(String myUid) async {
-    final usersSnap = await FirebaseFirestore.instance
-        .collection('leaderboard_v1_users')
-        .get(const GetOptions(source: Source.cache));
-
-    final List<_LikedProfile> results = [];
-
-    for (final userDoc in usersSnap.docs) {
-      if (userDoc.id == myUid) continue;
-
-      try {
-        final likeDoc = await FirebaseFirestore.instance
-            .collection('leaderboard_v1_users')
-            .doc(userDoc.id)
-            .collection('likes')
-            .doc(myUid)
-            .get(const GetOptions(source: Source.cache));
-
-        if (likeDoc.exists) {
-          final userData = userDoc.data();
-          final likeData = likeDoc.data();
-          final likedAt =
-          likeData?['likedAt'] as Timestamp?;
-
-          results.add(_LikedProfile(
-            uid: userDoc.id,
-            displayName:
-            (userData['displayName'] as String?) ??
-                'Player',
-            avatarEmoji:
-            (userData['avatarEmoji'] as String?) ??
-                '🙂',
-            score: (userData['metrics']?['score'] as num?)
-                ?.toDouble() ??
-                0.0,
-            level:
-            (userData['metrics']?['level'] as int?) ??
-                0,
-            likedAtMs:
-            likedAt?.millisecondsSinceEpoch ?? 0,
-          ));
-        }
-      } catch (_) {}
-    }
-
-    results
-        .sort((a, b) => b.likedAtMs.compareTo(a.likedAtMs));
-
-    if (mounted) {
-      setState(() {
-        _likedProfiles = results;
-        _isLoading = false;
-      });
-    }
-  }
-
-  GetOptions _safeGetOptions() {
-    return const GetOptions(
-        source: Source.serverAndCache);
-  }
-
   String _formatTime(int ms) {
     if (ms <= 0) return '';
-    final dt =
-    DateTime.fromMillisecondsSinceEpoch(ms);
+    final dt = DateTime.fromMillisecondsSinceEpoch(ms);
     final diff = DateTime.now().difference(dt);
     if (diff.inMinutes < 1) return 'Just now';
-    if (diff.inHours < 1) {
-      return '${diff.inMinutes}m ago';
-    }
+    if (diff.inHours < 1) return '${diff.inMinutes}m ago';
     if (diff.inDays < 1) return '${diff.inHours}h ago';
     if (diff.inDays < 7) return '${diff.inDays}d ago';
     return '${dt.day}/${dt.month}/${dt.year}';
@@ -236,8 +153,7 @@ class _LeaderboardSocialFeedTabState
       onRefresh: _loadLikedProfiles,
       color: AppConfig.primaryColor,
       child: ListView.builder(
-        padding:
-        const EdgeInsets.fromLTRB(18, 14, 18, 40),
+        padding: const EdgeInsets.fromLTRB(18, 14, 18, 40),
         physics: const BouncingScrollPhysics(
           parent: AlwaysScrollableScrollPhysics(),
         ),
@@ -248,8 +164,7 @@ class _LeaderboardSocialFeedTabState
             return _buildHeader();
           }
 
-          final profile =
-          _likedProfiles[index - 1];
+          final profile = _likedProfiles[index - 1];
           return _LikedProfileCard(
             profile: profile,
             isDark: widget.isDark,
@@ -264,21 +179,17 @@ class _LeaderboardSocialFeedTabState
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Container(
-        padding: const EdgeInsets.symmetric(
-            horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
           gradient: LinearGradient(
             colors: [
-              const Color(0xFFFF4D6D)
-                  .withOpacity(0.15),
-              const Color(0xFFFF0040)
-                  .withOpacity(0.05),
+              const Color(0xFFFF4D6D).withOpacity(0.15),
+              const Color(0xFFFF0040).withOpacity(0.05),
             ],
           ),
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
-            color: const Color(0xFFFF4D6D)
-                .withOpacity(0.3),
+            color: const Color(0xFFFF4D6D).withOpacity(0.3),
           ),
         ),
         child: Row(
@@ -291,32 +202,33 @@ class _LeaderboardSocialFeedTabState
             const SizedBox(width: 12),
             Expanded(
               child: Column(
-                crossAxisAlignment:
-                CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Liked Profiles',
+                    'My Favorites', // নামটা চেঞ্জ করে My Favorites দিলাম যাতে প্রাইভেট মনে হয়
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w900,
-                      color: widget.isDark
-                          ? Colors.white
-                          : Colors.black87,
+                      color: widget.isDark ? Colors.white : Colors.black87,
                     ),
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '${_likedProfiles.length} ${_likedProfiles.length == 1 ? 'profile' : 'profiles'} liked',
+                    '${_likedProfiles.length} ${_likedProfiles.length == 1 ? 'profile' : 'profiles'} you liked',
                     style: TextStyle(
                       fontSize: 12,
-                      color: widget.isDark
-                          ? Colors.white54
-                          : Colors.black45,
+                      color: widget.isDark ? Colors.white54 : Colors.black45,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                 ],
               ),
+            ),
+            // একটা প্রাইভেসি আইকন দিয়ে দিলাম যাতে ইউজার বুঝতে পারে এটা প্রাইভেট
+            Icon(
+              Icons.lock_outline_rounded,
+              color: widget.isDark ? Colors.white38 : Colors.black38,
+              size: 16,
             ),
           ],
         ),
@@ -335,8 +247,7 @@ class _LeaderboardSocialFeedTabState
               width: 80,
               height: 80,
               decoration: BoxDecoration(
-                color: const Color(0xFFFF4D6D)
-                    .withOpacity(0.12),
+                color: const Color(0xFFFF4D6D).withOpacity(0.12),
                 shape: BoxShape.circle,
               ),
               child: const Center(
@@ -352,35 +263,28 @@ class _LeaderboardSocialFeedTabState
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.w900,
-                color: widget.isDark
-                    ? Colors.white
-                    : Colors.black87,
+                color: widget.isDark ? Colors.white : Colors.black87,
               ),
             ),
             const SizedBox(height: 10),
             Text(
-              'Like someone\'s profile from the\nleaderboard and they\'ll appear here!',
+              'Like someone\'s profile from the\nleaderboard and they\'ll appear here.\nOnly you can see this list.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 14,
                 height: 1.5,
-                color: widget.isDark
-                    ? Colors.white54
-                    : Colors.black45,
+                color: widget.isDark ? Colors.white54 : Colors.black45,
               ),
             ),
             const SizedBox(height: 24),
             OutlinedButton.icon(
               onPressed: _loadLikedProfiles,
-              icon:
-              const Icon(Icons.refresh_rounded),
+              icon: const Icon(Icons.refresh_rounded),
               label: const Text('Refresh'),
               style: OutlinedButton.styleFrom(
-                foregroundColor:
-                AppConfig.primaryColor,
+                foregroundColor: AppConfig.primaryColor,
                 shape: RoundedRectangleBorder(
-                  borderRadius:
-                  BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(14),
                 ),
                 padding: const EdgeInsets.symmetric(
                     horizontal: 20, vertical: 12),
@@ -434,9 +338,7 @@ class _LikedProfileCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: isDark
-            ? Colors.white.withOpacity(0.04)
-            : Colors.white,
+        color: isDark ? Colors.white.withOpacity(0.04) : Colors.white,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: isDark
@@ -445,8 +347,7 @@ class _LikedProfileCard extends StatelessWidget {
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black
-                .withOpacity(isDark ? 0.12 : 0.05),
+            color: Colors.black.withOpacity(isDark ? 0.12 : 0.05),
             blurRadius: 16,
             offset: const Offset(0, 6),
           ),
@@ -462,16 +363,13 @@ class _LikedProfileCard extends StatelessWidget {
               gradient: LinearGradient(
                 colors: [
                   AppConfig.primaryColor,
-                  AppConfig.primaryColor
-                      .withOpacity(0.6),
+                  AppConfig.primaryColor.withOpacity(0.6),
                 ],
               ),
-              borderRadius:
-              BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                  color: AppConfig.primaryColor
-                      .withOpacity(0.25),
+                  color: AppConfig.primaryColor.withOpacity(0.25),
                   blurRadius: 12,
                   offset: const Offset(0, 4),
                 ),
@@ -480,8 +378,7 @@ class _LikedProfileCard extends StatelessWidget {
             child: Center(
               child: Text(
                 profile.avatarEmoji,
-                style:
-                const TextStyle(fontSize: 26),
+                style: const TextStyle(fontSize: 26),
               ),
             ),
           ),
@@ -491,48 +388,35 @@ class _LikedProfileCard extends StatelessWidget {
           // Info
           Expanded(
             child: Column(
-              crossAxisAlignment:
-              CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   profile.displayName,
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w900,
-                    color: isDark
-                        ? Colors.white
-                        : Colors.black87,
+                    color: isDark ? Colors.white : Colors.black87,
                   ),
                   maxLines: 1,
-                  overflow:
-                  TextOverflow.ellipsis,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
                 Row(
                   children: [
                     if (profile.level > 0) ...[
                       Container(
-                        padding:
-                        const EdgeInsets
-                            .symmetric(
-                            horizontal: 8,
-                            vertical: 3),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
-                          color: AppConfig
-                              .primaryColor
-                              .withOpacity(0.12),
-                          borderRadius:
-                          BorderRadius
-                              .circular(8),
+                          color: AppConfig.primaryColor.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
                           'Lv.${profile.level}',
                           style: const TextStyle(
                             fontSize: 10,
-                            fontWeight:
-                            FontWeight.w900,
-                            color: AppConfig
-                                .primaryColor,
+                            fontWeight: FontWeight.w900,
+                            color: AppConfig.primaryColor,
                           ),
                         ),
                       ),
@@ -543,11 +427,8 @@ class _LikedProfileCard extends StatelessWidget {
                         '${profile.score.toStringAsFixed(0)} XP',
                         style: TextStyle(
                           fontSize: 12,
-                          fontWeight:
-                          FontWeight.w700,
-                          color: isDark
-                              ? Colors.white54
-                              : Colors.black45,
+                          fontWeight: FontWeight.w700,
+                          color: isDark ? Colors.white54 : Colors.black45,
                         ),
                       ),
                   ],
@@ -566,9 +447,7 @@ class _LikedProfileCard extends StatelessWidget {
                         'Liked $timeText',
                         style: TextStyle(
                           fontSize: 11,
-                          color: isDark
-                              ? Colors.white38
-                              : Colors.black38,
+                          color: isDark ? Colors.white38 : Colors.black38,
                         ),
                       ),
                     ],
@@ -591,8 +470,7 @@ class _LikedProfileCard extends StatelessWidget {
 }
 
 /// ═════════════════════════════════════════════════
-/// ADD POST SHEET — এটা leaderboard_screen.dart থেকে
-/// call হয়, তাই এখানেই রাখতে হবে
+/// ADD POST SHEET
 /// ═════════════════════════════════════════════════
 
 int _wordCount(String text) {
@@ -621,16 +499,14 @@ Future<void> showAddPostSheet({
   HapticFeedback.mediumImpact();
   SoundService.playTap();
 
-  final TextEditingController postC =
-  TextEditingController();
+  final TextEditingController postC = TextEditingController();
   bool isPosting = false;
   bool isAdjusting = false;
 
   const int maxPostWords = 500;
   const int maxPostChars = 3000;
 
-  final isDark =
-      Theme.of(context).brightness == Brightness.dark;
+  final isDark = Theme.of(context).brightness == Brightness.dark;
 
   await showModalBottomSheet(
     context: context,
@@ -640,24 +516,20 @@ Future<void> showAddPostSheet({
       builder: (context, setSheetState) {
         return Padding(
           padding: EdgeInsets.only(
-            bottom:
-            MediaQuery.of(context).viewInsets.bottom,
+            bottom: MediaQuery.of(context).viewInsets.bottom,
           ),
           child: ClipRRect(
             borderRadius: const BorderRadius.vertical(
               top: Radius.circular(32),
             ),
             child: BackdropFilter(
-              filter: ImageFilter.blur(
-                  sigmaX: 25, sigmaY: 25),
+              filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
               child: Container(
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
                   color: isDark
-                      ? const Color(0xFF151C2F)
-                      .withOpacity(0.95)
-                      : Colors.white
-                      .withOpacity(0.95),
+                      ? const Color(0xFF151C2F).withOpacity(0.95)
+                      : Colors.white.withOpacity(0.95),
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -666,10 +538,8 @@ Future<void> showAddPostSheet({
                       width: 40,
                       height: 4,
                       decoration: BoxDecoration(
-                        color: Colors.grey
-                            .withOpacity(0.3),
-                        borderRadius:
-                        BorderRadius.circular(2),
+                        color: Colors.grey.withOpacity(0.3),
+                        borderRadius: BorderRadius.circular(2),
                       ),
                     ),
                     const SizedBox(height: 20),
@@ -677,89 +547,61 @@ Future<void> showAddPostSheet({
                       'Share Your Progress',
                       style: TextStyle(
                         fontSize: 20,
-                        fontWeight:
-                        FontWeight.w900,
-                        color: isDark
-                            ? Colors.white
-                            : Colors.black87,
+                        fontWeight: FontWeight.w900,
+                        color: isDark ? Colors.white : Colors.black87,
                       ),
                     ),
                     const SizedBox(height: 20),
                     Container(
-                      padding:
-                      const EdgeInsets.symmetric(
+                      padding: const EdgeInsets.symmetric(
                         horizontal: 16,
                         vertical: 8,
                       ),
                       decoration: BoxDecoration(
                         color: isDark
                             ? Colors.black26
-                            : Colors.black
-                            .withOpacity(0.04),
-                        borderRadius:
-                        BorderRadius.circular(16),
+                            : Colors.black.withOpacity(0.04),
+                        borderRadius: BorderRadius.circular(16),
                       ),
                       child: TextField(
                         controller: postC,
                         maxLines: 6,
                         maxLength: maxPostChars,
                         style: TextStyle(
-                          color: isDark
-                              ? Colors.white
-                              : Colors.black87,
-                          fontWeight:
-                          FontWeight.w600,
+                          color: isDark ? Colors.white : Colors.black87,
+                          fontWeight: FontWeight.w600,
                         ),
                         onChanged: (value) {
                           if (isAdjusting) return;
-                          final words =
-                          _wordCount(value);
-                          if (words >
-                              maxPostWords) {
+                          final words = _wordCount(value);
+                          if (words > maxPostWords) {
                             final trimmed =
-                            _trimToMaxWords(
-                                value,
-                                maxPostWords);
+                            _trimToMaxWords(value, maxPostWords);
                             isAdjusting = true;
-                            postC.value =
-                                TextEditingValue(
-                                  text: trimmed,
-                                  selection:
-                                  TextSelection
-                                      .collapsed(
-                                    offset:
-                                    trimmed.length,
-                                  ),
-                                );
+                            postC.value = TextEditingValue(
+                              text: trimmed,
+                              selection: TextSelection.collapsed(
+                                offset: trimmed.length,
+                              ),
+                            );
                             isAdjusting = false;
                           }
                           setSheetState(() {});
                         },
                         decoration: InputDecoration(
-                          hintText:
-                          'What did you achieve today?',
+                          hintText: 'What did you achieve today?',
                           hintStyle: TextStyle(
-                            color: isDark
-                                ? Colors.white38
-                                : Colors.black38,
+                            color: isDark ? Colors.white38 : Colors.black38,
                           ),
                           border: InputBorder.none,
                           counterText:
                           '${_wordCount(postC.text)} / $maxPostWords words',
                           counterStyle: TextStyle(
                             fontSize: 12,
-                            fontWeight:
-                            FontWeight.w600,
-                            color: _wordCount(
-                                postC.text) >
-                                maxPostWords
-                                ? AppConfig
-                                .errorColor
-                                : (isDark
-                                ? Colors
-                                .white38
-                                : Colors
-                                .black38),
+                            fontWeight: FontWeight.w600,
+                            color: _wordCount(postC.text) > maxPostWords
+                                ? AppConfig.errorColor
+                                : (isDark ? Colors.white38 : Colors.black38),
                           ),
                         ),
                       ),
@@ -769,111 +611,71 @@ Future<void> showAddPostSheet({
                       width: double.infinity,
                       height: 52,
                       child: ElevatedButton(
-                        style:
-                        ElevatedButton.styleFrom(
-                          backgroundColor:
-                          AppConfig
-                              .primaryColor,
-                          shape:
-                          RoundedRectangleBorder(
-                            borderRadius:
-                            BorderRadius
-                                .circular(16),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppConfig.primaryColor,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
                           ),
                         ),
                         onPressed: isPosting
                             ? null
                             : () async {
-                          final text = postC
-                              .text
-                              .trim();
+                          final text = postC.text.trim();
                           if (text.isEmpty) {
                             return;
                           }
 
-                          final words =
-                          _wordCount(
-                              text);
-                          if (words >
-                              maxPostWords) {
+                          final words = _wordCount(text);
+                          if (words > maxPostWords) {
                             onError(Exception(
                                 'Maximum $maxPostWords words allowed.'));
                             return;
                           }
 
-                          setSheetState(() =>
-                          isPosting =
-                          true);
+                          setSheetState(() => isPosting = true);
 
                           try {
-                            final nowMs =
-                                DateTime.now()
-                                    .millisecondsSinceEpoch;
+                            final nowMs = DateTime.now()
+                                .millisecondsSinceEpoch;
 
-                            await FirebaseFirestore
-                                .instance
-                                .collection(
-                                'leaderboard_v1_posts')
+                            await FirebaseFirestore.instance
+                                .collection('leaderboard_v1_posts')
                                 .add({
-                              'authorUid':
-                              activeUid,
-                              'authorName':
-                              profile
-                                  .displayName,
-                              'authorAvatar': profile
-                                  .avatarEmoji
-                                  .isEmpty
+                              'authorUid': activeUid,
+                              'authorName': profile.displayName,
+                              'authorAvatar': profile.avatarEmoji.isEmpty
                                   ? '🙂'
-                                  : profile
-                                  .avatarEmoji,
-                              'authorXp':
-                              profile
-                                  .cachedScore,
-                              'content':
-                              text,
-                              'timestamp':
-                              FieldValue
-                                  .serverTimestamp(),
-                              'clientTimestampMs':
-                              nowMs,
-                              'likeCount':
-                              0,
-                              'dislikeCount':
-                              0,
-                              'reportCount':
-                              0,
+                                  : profile.avatarEmoji,
+                              'authorXp': profile.cachedScore,
+                              'content': text,
+                              'timestamp': FieldValue.serverTimestamp(),
+                              'clientTimestampMs': nowMs,
+                              'likeCount': 0,
+                              'dislikeCount': 0,
+                              'reportCount': 0,
                             });
 
                             postC.clear();
                             onSuccess();
 
-                            if (context
-                                .mounted) {
-                              Navigator.pop(
-                                  context);
+                            if (context.mounted) {
+                              Navigator.pop(context);
                             }
                           } catch (e) {
-                            setSheetState(
-                                    () =>
-                                isPosting =
-                                false);
+                            setSheetState(() => isPosting = false);
                             onError(e);
                           }
                         },
                         child: isPosting
                             ? const CircularProgressIndicator(
-                          color:
-                          Colors.white,
+                          color: Colors.white,
                         )
                             : const Text(
                           'Post Now 🚀',
                           style: TextStyle(
                             fontSize: 16,
-                            fontWeight:
-                            FontWeight
-                                .w900,
-                            color:
-                            Colors.white,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.white,
                           ),
                         ),
                       ),
