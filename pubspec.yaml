@@ -1,7 +1,7 @@
 name: habitnode
 description: Habit Node - Track your daily habits easily
 publish_to: 'none'
-version: 1.0.2+2
+version: 1.0.3+2
 
 environment:
   sdk: ">=3.3.0 <4.0.0"

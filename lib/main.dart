@@ -21,15 +21,20 @@ import 'models/study_routine_model.dart';
 import 'models/study_session_model.dart';
 import 'models/study_target_model.dart';
 import 'screens/alarm_screen.dart';
+import 'screens/inbox_screen.dart';
 import 'screens/splash_screen.dart';
 import 'screens/study_mode_screen.dart';
 import 'services/advanced_pomodoro_service.dart';
 import 'services/alarm_service.dart';
 import 'services/auth_service.dart';
-import 'services/badge_service.dart';
+import 'services/auto_backup_trigger.dart';
 import 'services/backup_service.dart';
+import 'services/badge_service.dart';
+import 'services/chat_notification_service.dart';
+import 'services/connectivity_service.dart';
 import 'services/database_service.dart';
 import 'services/google_drive_service.dart';
+import 'services/lock_screen_service.dart';
 import 'services/notes_service.dart';
 import 'services/notification_service.dart';
 import 'services/remote_config_service.dart';
@@ -38,26 +43,72 @@ import 'services/timer_notification_service.dart';
 import 'services/timer_persistence_service.dart';
 import 'services/tts_service.dart';
 import 'widgets/badge_unlock_dialog.dart';
-import 'widgets/error_screen.dart';
 
-final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.system);
-final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+final ValueNotifier<ThemeMode> themeNotifier =
+ValueNotifier(ThemeMode.system);
+final GlobalKey<NavigatorState> navigatorKey =
+GlobalKey<NavigatorState>();
 
 // ═══════════════════════════════════════
-// ALARM STATE & AUTOMATION FLAGS
+// ALARM STATE & FLAGS
 // ═══════════════════════════════════════
 
 Timer? _alarmPollTimer;
 bool _isAlarmScreenOpen = false;
-bool _hasHandledColdStart = false; // 🚀 Automation Flag
+bool _hasHandledColdStart = false;
 
-final ValueNotifier<_FatalError?> _fatalErrorVN =
-ValueNotifier<_FatalError?>(null);
+// ═══════════════════════════════════════
+// 🌐 OFFLINE / RECOVERABLE ERROR CHECK
+// ─────────────────────────────────────
+// ✅ সব ধরনের error recoverable
+// Fatal error screen কখনো দেখাবে না
+// ═══════════════════════════════════════
 
-class _FatalError {
-  final Object error;
-  final StackTrace stack;
-  const _FatalError(this.error, this.stack);
+bool _isRecoverableError(Object error) {
+  // সব error-ই recoverable — app চলতে থাকবে
+  return true;
+}
+
+Future<bool> _hasNetworkConnection() async {
+  try {
+    final result = await InternetAddress.lookup(
+        'google.com')
+        .timeout(const Duration(seconds: 3));
+    return result.isNotEmpty &&
+        result.first.rawAddress.isNotEmpty;
+  } catch (_) {
+    return false;
+  }
+}
+
+// ═══════════════════════════════════════
+// 🎯 PAYLOAD DETECTION HELPERS
+// ═══════════════════════════════════════
+
+bool _isAlarmPayload(String payload) {
+  return payload.startsWith('alarm:');
+}
+
+bool _isPomodoroPayload(String payload) {
+  return payload ==
+      TimerNotificationService.payloadTimer ||
+      payload ==
+          TimerNotificationService.payloadComplete;
+}
+
+bool _isChatPayload(String payload) {
+  return payload == 'chat_message' ||
+      payload.startsWith('chat:') ||
+      payload.startsWith('message:');
+}
+
+bool _isSystemPayload(String payload) {
+  return payload == 'daily_summary' ||
+      payload == 'level_down' ||
+      payload == 'pomodoro' ||
+      _isAlarmPayload(payload) ||
+      _isPomodoroPayload(payload) ||
+      _isChatPayload(payload);
 }
 
 // ═══════════════════════════════════════
@@ -70,27 +121,66 @@ void main() async {
 
     _setupErrorHandlers();
 
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
+    // ✅ Firebase init — offline এও crash করবে না
+    try {
+      await Firebase.initializeApp(
+        options:
+        DefaultFirebaseOptions.currentPlatform,
+      );
+    } catch (e) {
+      debugPrint(
+          '⚠️ Firebase init warning (offline?): $e');
+    }
+
     await Hive.initFlutter();
 
-    // Register Hive adapters
-    if (!Hive.isAdapterRegistered(0)) Hive.registerAdapter(HabitAdapter());
-    if (!Hive.isAdapterRegistered(1)) Hive.registerAdapter(AppNotificationAdapter());
-    if (!Hive.isAdapterRegistered(2)) Hive.registerAdapter(StudySessionAdapter());
-    if (!Hive.isAdapterRegistered(3)) Hive.registerAdapter(StudyRoutineAdapter());
-    if (!Hive.isAdapterRegistered(4)) Hive.registerAdapter(RoutineSessionAdapter());
-    if (!Hive.isAdapterRegistered(6)) Hive.registerAdapter(LeaderboardProfileModelAdapter());
-    if (!Hive.isAdapterRegistered(7)) Hive.registerAdapter(StudyTargetAdapter());
-    if (!Hive.isAdapterRegistered(9)) Hive.registerAdapter(DailyStudyBlockAdapter());
-    if (!Hive.isAdapterRegistered(8)) Hive.registerAdapter(DailyStudyRoutineAdapter());
+    if (!Hive.isAdapterRegistered(0)) {
+      Hive.registerAdapter(HabitAdapter());
+    }
+    if (!Hive.isAdapterRegistered(1)) {
+      Hive.registerAdapter(AppNotificationAdapter());
+    }
+    if (!Hive.isAdapterRegistered(2)) {
+      Hive.registerAdapter(StudySessionAdapter());
+    }
+    if (!Hive.isAdapterRegistered(3)) {
+      Hive.registerAdapter(StudyRoutineAdapter());
+    }
+    if (!Hive.isAdapterRegistered(4)) {
+      Hive.registerAdapter(RoutineSessionAdapter());
+    }
+    if (!Hive.isAdapterRegistered(6)) {
+      Hive.registerAdapter(
+          LeaderboardProfileModelAdapter());
+    }
+    if (!Hive.isAdapterRegistered(7)) {
+      Hive.registerAdapter(StudyTargetAdapter());
+    }
+    if (!Hive.isAdapterRegistered(9)) {
+      Hive.registerAdapter(DailyStudyBlockAdapter());
+    }
+    if (!Hive.isAdapterRegistered(8)) {
+      Hive.registerAdapter(
+          DailyStudyRoutineAdapter());
+    }
 
     await DatabaseService.init();
     await NotesService.init();
-    await RemoteConfigService.init();
 
-    // 🚀 FIX: Added 'await' so Sound & TTS engines are fully loaded before app starts!
+    // ✅ RemoteConfig — offline এ skip
+    try {
+      await RemoteConfigService.init().timeout(
+        const Duration(seconds: 5),
+        onTimeout: () {
+          throw TimeoutException(
+              'RemoteConfig init timed out');
+        },
+      );
+    } catch (e) {
+      debugPrint(
+          '⚠️ RemoteConfig skipped (offline?): $e');
+    }
+
     await SoundService.init();
     await TtsService.init();
 
@@ -102,73 +192,291 @@ void main() async {
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
     ]);
-    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.light,
-    ));
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+      ),
+    );
 
     // ═══════════════════════════════════════
-    // 🎯 NOTIFICATION HANDLERS SETUP
+    // 🎯 NOTIFICATION HANDLERS
     // ═══════════════════════════════════════
 
-    NotificationService.onAlarmNotificationTapped = _handleAlarmNavigation;
+    NotificationService.onAlarmNotificationTapped =
+        _handleAlarmNavigation;
 
-    NotificationService.onAlarmActionTapped = (actionId, habitId) {
-      _handleAlarmActionTap(actionId: actionId, habitId: habitId);
+    NotificationService.onAlarmActionTapped =
+        (actionId, habitId) {
+      _handleAlarmActionTap(
+          actionId: actionId, habitId: habitId);
     };
 
-    NotificationService.onGeneralActionTapped = (actionId, payload) {
+    NotificationService.onGeneralActionTapped =
+        (actionId, payload) {
       _handleQuickActionTap(actionId, payload);
     };
 
-    NotificationService.onNotificationTapped = (payload) {
+    NotificationService.onNotificationTapped =
+        (payload) {
+      if (_isAlarmPayload(payload)) {
+        final habitId =
+        payload.replaceFirst('alarm:', '');
+        _handleAlarmNavigation(habitId);
+        return;
+      }
       _handleGeneralNotificationTap(payload);
     };
 
-    AlarmService.onAlarmTriggered = _openAlarmScreen;
-
     await NotificationService.init();
-    BadgeService.onBadgeUnlocked = _handleBadgeUnlocked;
-    await DatabaseService.performAutoReset();
+
+    // ═══════════════════════════════════════
+    // 💬 CHAT NOTIFICATION — offline safe
+    // ═══════════════════════════════════════
+
+    try {
+      await ChatNotificationService.instance
+          .init()
+          .timeout(
+        const Duration(seconds: 5),
+        onTimeout: () {
+          throw TimeoutException(
+              'ChatNotification timed out');
+        },
+      );
+    } catch (e) {
+      debugPrint(
+          '⚠️ ChatNotification skipped (offline?): $e');
+    }
+
+    ChatNotificationService
+        .instance.onNotificationTap = (peerUid) {
+      _handleChatNotificationTap(peerUid);
+    };
+
+    AuthService.instance.userNotifier
+        .addListener(() {
+      _onAuthStateChanged();
+    });
+
+    if (AuthService.instance.currentUser != null) {
+      _startChatListenerIfOnline();
+    }
+
+    BadgeService.onBadgeUnlocked =
+        _handleBadgeUnlocked;
+
+    try {
+      await DatabaseService.performAutoReset();
+    } catch (e) {
+      debugPrint('⚠️ Auto reset failed: $e');
+    }
+
     _loadSavedTheme();
 
-    // 🚀 Start Automation Engine immediately
-    _checkInitialAlarmLaunchDetails();
+    // ═══════════════════════════════════════
+    // 🚀 COLD START
+    // ═══════════════════════════════════════
 
-    runApp(const HabitNodeApp());
+    Widget initialScreen = const SplashScreen();
+
+    try {
+      final details =
+      await FlutterLocalNotificationsPlugin()
+          .getNotificationAppLaunchDetails();
+
+      if (details != null &&
+          details.didNotificationLaunchApp) {
+        final payload =
+            details.notificationResponse?.payload;
+        final actionId =
+            details.notificationResponse?.actionId;
+
+        if (payload != null) {
+          if (_isAlarmPayload(payload)) {
+            final habitId =
+            payload.replaceFirst('alarm:', '');
+            if (actionId == 'dismiss' ||
+                actionId == 'snooze') {
+              _hasHandledColdStart = true;
+              Future.delayed(
+                  const Duration(
+                      milliseconds: 2000), () {
+                _handleAlarmActionTap(
+                    actionId: actionId!,
+                    habitId: habitId);
+              });
+            } else {
+              final habit =
+              DatabaseService.getHabitById(
+                  habitId);
+              if (habit != null) {
+                await LockScreenService
+                    .enableForAlarm();
+                initialScreen =
+                    AlarmScreen(habit: habit);
+                _hasHandledColdStart = true;
+              }
+            }
+          }
+
+          if (!_hasHandledColdStart &&
+              _isPomodoroPayload(payload)) {
+            initialScreen = const StudyModeScreen();
+            _hasHandledColdStart = true;
+          }
+
+          if (!_hasHandledColdStart &&
+              _isChatPayload(payload)) {
+            _hasHandledColdStart = true;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint(
+          '❌ Cold start detection error: $e');
+    }
+
+    if (!_hasHandledColdStart) {
+      await LockScreenService.forceDisable();
+      _checkInitialAlarmLaunchDetails();
+    }
+
+    runApp(
+        HabitNodeApp(initialScreen: initialScreen));
   }, (error, stack) {
+    // ✅ সব error gracefully handle
+    // Fatal screen দেখাবে না
     _handleUncaughtError(error, stack);
   });
 }
 
 // ═══════════════════════════════════════
-// 🎯 QUICK ACTION HANDLER
+// CHAT LISTENER — online only
 // ═══════════════════════════════════════
 
-Future<void> _handleQuickActionTap(String actionId, String payload) async {
-  debugPrint('⚡ Quick Action: $actionId for payload: $payload');
+Future<void> _startChatListenerIfOnline() async {
+  final isOnline = await _hasNetworkConnection();
+  if (isOnline) {
+    try {
+      ChatNotificationService.instance
+          .startInboxListener();
+    } catch (e) {
+      debugPrint(
+          '⚠️ Chat listener start failed: $e');
+    }
+  }
+}
 
-  final cleanPayload = payload.startsWith('alarm:')
+// ═══════════════════════════════════════
+// AUTH STATE CHANGE
+// ═══════════════════════════════════════
+
+void _onAuthStateChanged() {
+  final user = AuthService.instance.currentUser;
+  if (user != null) {
+    _startChatListenerIfOnline();
+  } else {
+    try {
+      ChatNotificationService.instance
+          .stopInboxListener();
+      ChatNotificationService.instance.resetState();
+    } catch (_) {}
+  }
+}
+
+// ═══════════════════════════════════════
+// CHAT NOTIFICATION TAP
+// ═══════════════════════════════════════
+
+void _handleChatNotificationTap(String peerUid) {
+  final nav = navigatorKey.currentState;
+  if (nav == null) {
+    Future.delayed(
+        const Duration(milliseconds: 800), () {
+      final nav2 = navigatorKey.currentState;
+      if (nav2 == null) return;
+      _showChatSnackbar(nav2);
+    });
+    return;
+  }
+  _showChatSnackbar(nav);
+}
+
+void _showChatSnackbar(NavigatorState nav) {
+  try {
+    final ctx = nav.context;
+    if (!ctx.mounted) return;
+    ScaffoldMessenger.of(ctx).clearSnackBars();
+    ScaffoldMessenger.of(ctx).showSnackBar(
+      SnackBar(
+        content: const Row(children: [
+          Text('💬',
+              style: TextStyle(fontSize: 18)),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text('New message received',
+                style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14)),
+          ),
+        ]),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: const Color(0xFF6C63FF),
+        duration: const Duration(seconds: 4),
+        shape: RoundedRectangleBorder(
+            borderRadius:
+            BorderRadius.circular(14)),
+        margin: const EdgeInsets.fromLTRB(
+            16, 0, 16, 16),
+        action: SnackBarAction(
+          label: 'Open',
+          textColor: Colors.white,
+          onPressed: () {
+            navigatorKey.currentState?.push(
+              MaterialPageRoute(
+                  builder: (_) =>
+                  const InboxScreen()),
+            );
+          },
+        ),
+      ),
+    );
+  } catch (_) {}
+}
+
+// ═══════════════════════════════════════
+// QUICK ACTION HANDLER
+// ═══════════════════════════════════════
+
+Future<void> _handleQuickActionTap(
+    String actionId, String payload) async {
+  final cleanPayload = _isAlarmPayload(payload)
       ? payload.replaceFirst('alarm:', '')
       : payload;
 
   if (actionId == 'mark_done') {
-    final habit = DatabaseService.getHabitById(cleanPayload);
-
-    if (habit != null && !habit.isCompletedToday()) {
-      final today = DateTime.now().toString().split(' ')[0];
+    final habit =
+    DatabaseService.getHabitById(cleanPayload);
+    if (habit != null &&
+        !habit.isCompletedToday()) {
+      final today =
+      DateTime.now().toString().split(' ')[0];
       habit.completedDates.add(today);
       habit.currentStreak++;
       if (habit.currentStreak > habit.bestStreak) {
         habit.bestStreak = habit.currentStreak;
       }
       habit.lastProgressDate = today;
-
       await DatabaseService.updateHabit(habit);
-      try { await BadgeService.onHabitCompleted(habit); } catch (_) {}
-      try { SoundService.playSuccess(); } catch (_) {}
-
-      await NotificationService.cancelHabitReminder(habit);
+      try {
+        await BadgeService.onHabitCompleted(habit);
+      } catch (_) {}
+      try {
+        SoundService.playSuccess();
+      } catch (_) {}
+      await NotificationService
+          .cancelHabitReminder(habit);
     }
     return;
   }
@@ -177,64 +485,102 @@ Future<void> _handleQuickActionTap(String actionId, String payload) async {
     _handleGeneralNotificationTap(cleanPayload);
     return;
   }
+
+  if (actionId == 'dismiss' ||
+      actionId == 'snooze') {
+    await _handleAlarmActionTap(
+        actionId: actionId,
+        habitId: cleanPayload);
+  }
 }
 
 // ═══════════════════════════════════════
-// 🎯 SMART ROUTING HANDLER
+// GENERAL NOTIFICATION TAP
 // ═══════════════════════════════════════
 
-void _handleGeneralNotificationTap(String payload) {
+void _handleGeneralNotificationTap(
+    String payload) {
   final nav = navigatorKey.currentState;
 
   if (nav == null) {
-    Future.delayed(const Duration(milliseconds: 500), () {
+    Future.delayed(
+        const Duration(milliseconds: 500), () {
       _handleGeneralNotificationTap(payload);
     });
     return;
   }
 
-  if (payload.contains('study') ||
-      payload.contains('pomodoro') ||
-      payload.contains('timer') ||
-      payload.contains('focus')) {
-    // 🚀 FIX: Clear previous screens so it doesn't get stuck on dashboard!
-    nav.popUntil((route) => route.isFirst);
-    nav.push(MaterialPageRoute(builder: (_) => const StudyModeScreen()));
+  if (_isAlarmPayload(payload)) {
+    final habitId =
+    payload.replaceFirst('alarm:', '');
+    _handleAlarmNavigation(habitId);
     return;
   }
 
-  if (payload == 'daily_summary') {
-    nav.popUntil((route) => route.isFirst);
+  if (_isPomodoroPayload(payload)) {
+    nav.push(MaterialPageRoute(
+        builder: (_) => const StudyModeScreen()));
     return;
   }
 
-  try {
-    final habit = DatabaseService.getHabitById(payload);
-    if (habit != null) {
-      nav.popUntil((route) => route.isFirst);
-      Future.delayed(const Duration(milliseconds: 300), () {
-        if (nav.context.mounted) {
-          ScaffoldMessenger.of(nav.context).showSnackBar(
-            SnackBar(
-              content: Text('${habit.emoji} ${habit.name}'),
-              behavior: SnackBarBehavior.floating,
-              backgroundColor: Color(habit.colorValue),
-              duration: const Duration(seconds: 2),
-            ),
-          );
-        }
-      });
-      return;
-    }
-  } catch (e) {
-    debugPrint('⚠️ Habit lookup error: $e');
+  if (_isChatPayload(payload)) {
+    _showChatSnackbar(nav);
+    return;
   }
 
-  nav.popUntil((route) => route.isFirst);
+  if (payload == 'daily_summary' ||
+      payload == 'level_down') {
+    return;
+  }
+
+  if (!_isSystemPayload(payload)) {
+    try {
+      final habit =
+      DatabaseService.getHabitById(payload);
+      if (habit != null) {
+        try {
+          final ctx = nav.context;
+          if (ctx.mounted) {
+            ScaffoldMessenger.of(ctx)
+                .clearSnackBars();
+            ScaffoldMessenger.of(ctx)
+                .showSnackBar(SnackBar(
+              content: Row(children: [
+                Text(habit.emoji,
+                    style: const TextStyle(
+                        fontSize: 20)),
+                const SizedBox(width: 10),
+                Expanded(
+                    child: Text(habit.name,
+                        style: const TextStyle(
+                            fontWeight:
+                            FontWeight.w600,
+                            fontSize: 14),
+                        overflow: TextOverflow
+                            .ellipsis)),
+              ]),
+              behavior:
+              SnackBarBehavior.floating,
+              backgroundColor:
+              Color(habit.colorValue),
+              duration:
+              const Duration(seconds: 3),
+              shape: RoundedRectangleBorder(
+                  borderRadius:
+                  BorderRadius.circular(14)),
+              margin: const EdgeInsets.fromLTRB(
+                  16, 0, 16, 16),
+            ));
+          }
+        } catch (_) {}
+        return;
+      }
+    } catch (_) {}
+  }
 }
 
 // ═══════════════════════════════════════
-// ALARM ACTION — SILENT HANDLER
+// ALARM ACTION HANDLER
 // ═══════════════════════════════════════
 
 Future<void> _handleAlarmActionTap({
@@ -242,29 +588,30 @@ Future<void> _handleAlarmActionTap({
   required String habitId,
 }) async {
   try {
-    await NotificationService.cancelAlarmNotification(habitId);
+    await NotificationService
+        .cancelAlarmNotification(habitId);
+  } catch (_) {}
+  try {
+    await AlarmService.stopAlarm();
   } catch (_) {}
 
-  try {
-    await AlarmService.handleAlarmActionFromNotification(
-      actionId: actionId,
-      habitId: habitId,
-    );
-  } catch (e) {
-    debugPrint('❌ Alarm action error: $e');
-  }
-
   if (actionId == 'snooze') {
-    final habit = DatabaseService.getHabitById(habitId);
+    final habit =
+    DatabaseService.getHabitById(habitId);
     if (habit != null) {
-      await NotificationService.scheduleSnoozeAlarm(habit: habit);
+      await NotificationService.scheduleSnoozeAlarm(
+          habit: habit,
+          delay: const Duration(minutes: 5));
     }
   }
 
   if (actionId == 'dismiss') {
-    final habit = DatabaseService.getHabitById(habitId);
-    if (habit != null && !habit.isCompletedToday()) {
-      final today = DateTime.now().toString().split(' ')[0];
+    final habit =
+    DatabaseService.getHabitById(habitId);
+    if (habit != null &&
+        !habit.isCompletedToday()) {
+      final today =
+      DateTime.now().toString().split(' ')[0];
       habit.completedDates.add(today);
       habit.currentStreak++;
       if (habit.currentStreak > habit.bestStreak) {
@@ -272,9 +619,13 @@ Future<void> _handleAlarmActionTap({
       }
       habit.lastProgressDate = today;
       await DatabaseService.updateHabit(habit);
-      try { await BadgeService.onHabitCompleted(habit); } catch (_) {}
+      try {
+        await BadgeService.onHabitCompleted(habit);
+      } catch (_) {}
     }
   }
+
+  await LockScreenService.disableAfterAlarm();
 
   if (_isAlarmScreenOpen) {
     final nav = navigatorKey.currentState;
@@ -284,38 +635,85 @@ Future<void> _handleAlarmActionTap({
 }
 
 // ═══════════════════════════════════════
-// ERROR HANDLERS
+// ✅ ERROR HANDLERS
+// Fatal screen সম্পূর্ণ বন্ধ
 // ═══════════════════════════════════════
 
 void _setupErrorHandlers() {
-  FlutterError.onError = (FlutterErrorDetails details) {
+  // ✅ Flutter widget error — শুধু log
+  FlutterError.onError =
+      (FlutterErrorDetails details) {
     FlutterError.dumpErrorToConsole(details);
-    final stack = details.stack ?? StackTrace.current;
-    if (!_isDebugMode()) _handleUncaughtError(details.exception, stack);
+    debugPrint(
+        '⚠️ Flutter error (handled): ${details.exception}');
+    // Fatal screen দেখাবে না
   };
 
-  PlatformDispatcher.instance.onError = (error, stack) {
-    if (!_isDebugMode()) {
-      _handleUncaughtError(error, stack);
-      return true;
+  // ✅ Platform/async error — শুধু log
+  PlatformDispatcher.instance.onError =
+      (error, stack) {
+    debugPrint(
+        '⚠️ Platform error (handled): $error');
+    return true; // handled — no crash
+  };
+
+  // ✅ Widget build error — user-friendly small widget
+  // পুরো screen cover করবে না
+  ErrorWidget.builder =
+      (FlutterErrorDetails details) {
+    if (_isDebugMode()) {
+      return ErrorWidget(details.exception);
     }
-    return false;
-  };
 
-  ErrorWidget.builder = (FlutterErrorDetails details) {
-    if (_isDebugMode()) return ErrorWidget(details.exception);
-    return Material(
-      color: const Color(0xFF0B1020),
-      child: Center(
-        child: ErrorScreen(
-          title: 'Oops!',
-          message: 'Something went wrong.',
-          errorCode: 'UI_ERROR',
-          onRetry: _restartApp,
-          showBackButton: false,
-          showRetryButton: true,
-        ),
-      ),
+    // ✅ Release mode — ছোট friendly widget
+    // পুরো screen নেয় না
+    return Builder(
+      builder: (context) {
+        final isDark =
+            Theme.of(context).brightness ==
+                Brightness.dark;
+        return Container(
+          padding: const EdgeInsets.all(16),
+          margin: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: isDark
+                ? const Color(0xFF1E293B)
+                : const Color(0xFFF8F9FA),
+            borderRadius:
+            BorderRadius.circular(16),
+            border: Border.all(
+              color: isDark
+                  ? Colors.white
+                  .withOpacity(0.1)
+                  : Colors.black
+                  .withOpacity(0.08),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '😅',
+                style: TextStyle(
+                    fontSize: isDark ? 20 : 18),
+              ),
+              const SizedBox(width: 10),
+              Flexible(
+                child: Text(
+                  'This section had a small issue.\nThe rest of the app works fine!',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: isDark
+                        ? Colors.white70
+                        : Colors.black54,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   };
 }
@@ -329,37 +727,32 @@ bool _isDebugMode() {
   return isDebug;
 }
 
-String _prettyFatalMessage(Object error) {
-  final raw = error.toString();
-  if (raw.contains('AuthServiceException:')) return raw.replaceAll('AuthServiceException:', '').trim();
-  if (raw.contains('LeaderboardServiceException:')) return raw.replaceAll('LeaderboardServiceException:', '').trim();
-  final lower = raw.toLowerCase();
-  if (lower.contains('apiexception: 10')) return 'Unable to sign in. Google Sign-In is not configured correctly.';
-  if (lower.contains('invalid-credential')) return 'Invalid or expired sign-in session. Please sign in again.';
-  return 'An unexpected error occurred. Please try again.';
-}
+// ✅ FIX: সব error gracefully handle
+// Fatal screen কখনো দেখাবে না
+void _handleUncaughtError(
+    Object error, StackTrace stack) {
+  debugPrint(
+      '⚠️ App error (gracefully handled): $error');
+  debugPrint('📍 Stack: $stack');
 
-void _handleUncaughtError(Object error, StackTrace stack) {
-  _fatalErrorVN.value = _FatalError(error, stack);
-}
-
-void _restartApp() {
-  _fatalErrorVN.value = null;
-  final nav = navigatorKey.currentState;
-  if (nav == null) return;
-  nav.pushAndRemoveUntil(
-    MaterialPageRoute(builder: (_) => const SplashScreen()),
-        (route) => false,
-  );
+  // ✅ কোনো fatal screen নেই
+  // App চলতে থাকবে
+  // User কিছু দেখবে না
 }
 
 void _loadSavedTheme() {
   try {
-    final savedTheme = DatabaseService.getThemeMode();
+    final savedTheme =
+    DatabaseService.getThemeMode();
     switch (savedTheme) {
-      case 'light': themeNotifier.value = ThemeMode.light; break;
-      case 'dark': themeNotifier.value = ThemeMode.dark; break;
-      default: themeNotifier.value = ThemeMode.system;
+      case 'light':
+        themeNotifier.value = ThemeMode.light;
+        break;
+      case 'dark':
+        themeNotifier.value = ThemeMode.dark;
+        break;
+      default:
+        themeNotifier.value = ThemeMode.system;
     }
   } catch (e) {
     themeNotifier.value = ThemeMode.system;
@@ -367,15 +760,18 @@ void _loadSavedTheme() {
 }
 
 void _handleBadgeUnlocked(dynamic badge) {
-  Future.delayed(const Duration(milliseconds: 500), () {
+  Future.delayed(
+      const Duration(milliseconds: 500), () {
     final nav = navigatorKey.currentState;
-    if (nav == null || !nav.context.mounted || _isAlarmScreenOpen) return;
+    if (nav == null ||
+        !nav.context.mounted ||
+        _isAlarmScreenOpen) return;
     BadgeUnlockDialog.show(nav.context, badge);
   });
 }
 
 // ═══════════════════════════════════════
-// 🚀 AUTOMATION ENGINE: COLD START — ALARM LAUNCH DETECTION
+// INITIAL LAUNCH DETAILS
 // ═══════════════════════════════════════
 
 void _checkInitialAlarmLaunchDetails() async {
@@ -383,38 +779,59 @@ void _checkInitialAlarmLaunchDetails() async {
   _hasHandledColdStart = true;
 
   try {
-    final details = await FlutterLocalNotificationsPlugin().getNotificationAppLaunchDetails();
-    if (details == null || !details.didNotificationLaunchApp) return;
+    final details =
+    await FlutterLocalNotificationsPlugin()
+        .getNotificationAppLaunchDetails();
 
-    final response = details.notificationResponse;
+    if (details == null ||
+        !details.didNotificationLaunchApp) {
+      return;
+    }
+
+    final response =
+        details.notificationResponse;
     final String? payload = response?.payload;
     final String? actionId = response?.actionId;
 
     if (payload == null) return;
 
-    // 🚀 INSTANT LOCK-SCREEN AUTOMATION (No Delays)
-    if (payload.startsWith('alarm:')) {
-      final habitId = payload.replaceFirst('alarm:', '');
-      if (actionId != null && (actionId == 'dismiss' || actionId == 'snooze')) {
-        await _handleAlarmActionTap(actionId: actionId, habitId: habitId);
+    if (_isAlarmPayload(payload)) {
+      final habitId =
+      payload.replaceFirst('alarm:', '');
+      if (actionId == 'dismiss' ||
+          actionId == 'snooze') {
+        await _handleAlarmActionTap(
+            actionId: actionId!,
+            habitId: habitId);
         return;
       }
-      // সরাসরি অ্যালার্ম স্ক্রিনে নিয়ে যাবে
       _handleAlarmNavigation(habitId);
       return;
     }
 
-    // ⏳ অন্যান্য নোটিফিকেশনের ক্ষেত্রে একটু ডেল দেওয়া হলো যাতে ড্যাশবোর্ড লোড হতে পারে
-    await Future.delayed(const Duration(milliseconds: 1000));
-
-    if (actionId != null) {
-      _handleQuickActionTap(actionId, payload);
+    if (_isPomodoroPayload(payload)) {
+      await Future.delayed(
+          const Duration(milliseconds: 1500));
+      navigatorKey.currentState?.push(
+        MaterialPageRoute(
+            builder: (_) =>
+            const StudyModeScreen()),
+      );
       return;
     }
 
-    _handleGeneralNotificationTap(payload);
+    if (_isChatPayload(payload)) return;
+
+    if (actionId != null) {
+      await Future.delayed(
+          const Duration(milliseconds: 1500));
+      await _handleQuickActionTap(
+          actionId, payload);
+      return;
+    }
   } catch (e) {
-    debugPrint('❌ Initial launch error: $e');
+    debugPrint(
+        '❌ Launch details error: $e');
   }
 }
 
@@ -426,20 +843,22 @@ void _handleAlarmNavigation(String habitId) {
   if (_isAlarmScreenOpen) return;
   _alarmPollTimer?.cancel();
 
-  // প্রথম চেষ্টাতেই ডাটাবেস রেডি থাকলে সরাসরি ওপেন হবে
+  unawaited(LockScreenService.enableForAlarm());
+
   if (_tryOpenAlarmForHabit(habitId)) return;
 
-  // অ্যাপ পুরোপুরি কিল (Killed) থাকলে ডাটাবেস লোড হতে সময় লাগতে পারে, তাই পোলিং করবে
   int attempts = 0;
   _alarmPollTimer = Timer.periodic(
     const Duration(milliseconds: 200),
         (timer) {
       attempts++;
       if (attempts > 20) {
-        timer.cancel(); // ৪ সেকেন্ড পর হাল ছেড়ে দিবে
+        timer.cancel();
         return;
       }
-      if (_tryOpenAlarmForHabit(habitId)) timer.cancel();
+      if (_tryOpenAlarmForHabit(habitId)) {
+        timer.cancel();
+      }
     },
   );
 }
@@ -448,14 +867,13 @@ bool _tryOpenAlarmForHabit(String habitId) {
   final nav = navigatorKey.currentState;
   if (nav == null) return false;
   try {
-    final habit = DatabaseService.getHabitById(habitId);
+    final habit =
+    DatabaseService.getHabitById(habitId);
     if (habit != null) {
       _openAlarmScreen(habit);
       return true;
     }
-  } catch (e) {
-    debugPrint('⏳ DB not ready: $e');
-  }
+  } catch (_) {}
   return false;
 }
 
@@ -464,64 +882,97 @@ void _openAlarmScreen(Habit habit) {
   final nav = navigatorKey.currentState;
   if (nav == null) return;
 
-  NotificationService.cancelAlarmNotification(habit.id).catchError((_) {});
-  AlarmService.startAlarm(habit).catchError((e) {});
+  NotificationService.cancelAlarmNotification(
+      habit.id)
+      .catchError((_) {});
 
   _isAlarmScreenOpen = true;
 
-  nav.push<void>(
-    PageRouteBuilder(
-      opaque: true,
-      barrierDismissible: false,
-      fullscreenDialog: true,
-      pageBuilder: (context, animation, secondaryAnimation) =>
-          AlarmScreen(habit: habit),
-      transitionsBuilder: (context, animation, secondaryAnimation, child) {
-        return FadeTransition(
-          opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
-          child: child,
-        );
-      },
-      transitionDuration: const Duration(milliseconds: 150), // 🚀 ফাস্ট অ্যানিমেশন
-      reverseTransitionDuration: const Duration(milliseconds: 150),
-    ),
-  ).then((_) {
+  nav
+      .push<void>(PageRouteBuilder(
+    opaque: true,
+    barrierDismissible: false,
+    fullscreenDialog: true,
+    pageBuilder: (context, animation, _) =>
+        AlarmScreen(habit: habit),
+    transitionsBuilder:
+        (context, animation, _, child) {
+      return FadeTransition(
+        opacity: CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOut),
+        child: child,
+      );
+    },
+    transitionDuration:
+    const Duration(milliseconds: 150),
+    reverseTransitionDuration:
+    const Duration(milliseconds: 150),
+  ))
+      .then((_) {
     _isAlarmScreenOpen = false;
+    unawaited(
+        LockScreenService.disableAfterAlarm());
   });
 }
 
 // ═══════════════════════════════════════
-// AUTO BACKUP SERVICE
+// AUTO BACKUP — offline safe
 // ═══════════════════════════════════════
 
 class _AutoBackupService {
   static bool _isRunning = false;
-  static const int _dailyMs = 24 * 60 * 60 * 1000;
-  static const int _weeklyMs = 7 * 24 * 60 * 60 * 1000;
+  static const int _dailyMs =
+      24 * 60 * 60 * 1000;
+  static const int _weeklyMs =
+      7 * 24 * 60 * 60 * 1000;
 
   static Future<void> runIfNeeded() async {
     if (_isRunning) return;
     try {
-      if (!DatabaseService.isAutoBackupEnabled()) return;
-      final user = AuthService.instance.currentUser;
+      if (!DatabaseService
+          .isAutoBackupEnabled()) return;
+      final user =
+          AuthService.instance.currentUser;
       if (user == null) return;
-      final habits = DatabaseService.getAllHabits();
+      final habits =
+      DatabaseService.getAllHabits();
       if (habits.isEmpty) return;
 
-      final frequency = DatabaseService.getAutoBackupFrequency();
-      final lastBackupMs = DatabaseService.getLastAutoBackupTime();
-      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      final frequency =
+      DatabaseService.getAutoBackupFrequency();
+      final lastBackupMs =
+      DatabaseService.getLastAutoBackupTime();
+      final nowMs =
+          DateTime.now().millisecondsSinceEpoch;
 
       bool shouldRun = false;
       switch (frequency) {
-        case 'every_exit': shouldRun = true; break;
-        case 'weekly': shouldRun = lastBackupMs == 0 || (nowMs - lastBackupMs) >= _weeklyMs; break;
+        case 'every_exit':
+        case 'on_exit':
+          shouldRun = true;
+          break;
+        case 'weekly':
+          shouldRun = lastBackupMs == 0 ||
+              (nowMs - lastBackupMs) >= _weeklyMs;
+          break;
         case 'daily':
-        default: shouldRun = lastBackupMs == 0 || (nowMs - lastBackupMs) >= _dailyMs; break;
+          shouldRun = lastBackupMs == 0 ||
+              (nowMs - lastBackupMs) >= _dailyMs;
+          break;
+        default:
+          return;
       }
 
       if (!shouldRun) return;
-      if (DatabaseService.isAutoBackupWifiOnly() && Platform.isAndroid) {
+
+      final isOnline =
+      await _hasNetworkConnection();
+      if (!isOnline) return;
+
+      if (DatabaseService
+          .isAutoBackupWifiOnly() &&
+          Platform.isAndroid) {
         final isOnWifi = await _isOnWifi();
         if (!isOnWifi) return;
       }
@@ -529,9 +980,19 @@ class _AutoBackupService {
       _isRunning = true;
       try {
         final driveService = GoogleDriveService();
-        await driveService.backupAllDataToCloudOnDemand();
-        await DatabaseService.setLastAutoBackupTime(nowMs);
-      } catch (_) {}
+        await driveService
+            .backupAllDataToCloudOnDemand()
+            .timeout(const Duration(seconds: 30),
+            onTimeout: () {
+              throw TimeoutException(
+                  'Auto backup timed out');
+            });
+        await DatabaseService
+            .setLastAutoBackupTime(nowMs);
+      } catch (e) {
+        debugPrint(
+            '⚠️ Auto backup failed: $e');
+      }
     } finally {
       _isRunning = false;
     }
@@ -539,8 +1000,13 @@ class _AutoBackupService {
 
   static Future<bool> _isOnWifi() async {
     try {
-      final result = await InternetAddress.lookup('google.com');
-      return result.isNotEmpty && result.first.rawAddress.isNotEmpty;
+      final result =
+      await InternetAddress.lookup(
+          'google.com')
+          .timeout(
+          const Duration(seconds: 3));
+      return result.isNotEmpty &&
+          result.first.rawAddress.isNotEmpty;
     } catch (_) {
       return false;
     }
@@ -552,36 +1018,104 @@ class _AutoBackupService {
 // ═══════════════════════════════════════
 
 class HabitNodeApp extends StatefulWidget {
-  const HabitNodeApp({super.key});
+  final Widget initialScreen;
+  const HabitNodeApp(
+      {super.key, required this.initialScreen});
 
   @override
-  State<HabitNodeApp> createState() => _HabitNodeAppState();
+  State<HabitNodeApp> createState() =>
+      _HabitNodeAppState();
 }
 
-class _HabitNodeAppState extends State<HabitNodeApp>
+class _HabitNodeAppState
+    extends State<HabitNodeApp>
     with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) {
+      _triggerSilentRestoreOnAppLaunch();
+    });
+  }
+
+  Future<void>
+  _triggerSilentRestoreOnAppLaunch() async {
+    final user =
+        AuthService.instance.currentUser;
+    if (user == null) return;
+
+    final isOnline =
+    await _hasNetworkConnection();
+    if (!isOnline) return;
+
+    final localProfile = DatabaseService
+        .getLeaderboardProfileForUid(user.uid);
+    if (localProfile != null) return;
+
+    try {
+      final driveService = GoogleDriveService();
+      await driveService
+          .restoreAllDataFromCloudOnDemand()
+          .timeout(const Duration(seconds: 20),
+          onTimeout: () {
+            throw TimeoutException(
+                'Silent restore timed out');
+          });
+    } catch (e) {
+      debugPrint(
+          '⚠️ Silent restore failed: $e');
+    }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    try { _fatalErrorVN.dispose(); } catch (_) {}
+    ChatNotificationService.instance
+        .stopAllListeners()
+        .catchError((_) {});
+    AutoBackupTrigger.dispose();
+    ConnectivityService.instance.dispose();
     super.dispose();
   }
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
+  void didChangeAppLifecycleState(
+      AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     switch (state) {
       case AppLifecycleState.paused:
-        _AutoBackupService.runIfNeeded().catchError((_) {});
+        _AutoBackupService.runIfNeeded()
+            .catchError((_) {});
+        AutoBackupTrigger.backupOnExit()
+            .catchError((_) {});
+        if (!_isAlarmScreenOpen) {
+          unawaited(
+              LockScreenService
+                  .disableAfterAlarm());
+        }
+        try {
+          ChatNotificationService.instance
+              .setActiveChatPeer(null);
+        } catch (_) {}
         break;
       case AppLifecycleState.resumed:
         _refreshThemeOnResume();
+        AutoBackupTrigger.checkPendingBackup()
+            .catchError((_) {});
+        if (AuthService
+            .instance.currentUser !=
+            null) {
+          _startChatListenerIfOnline();
+        }
+        break;
+      case AppLifecycleState.detached:
+        try {
+          ChatNotificationService.instance
+              .stopAllListeners()
+              .catchError((_) {});
+        } catch (_) {}
         break;
       default:
         break;
@@ -590,14 +1124,22 @@ class _HabitNodeAppState extends State<HabitNodeApp>
 
   void _refreshThemeOnResume() {
     try {
-      final savedTheme = DatabaseService.getThemeMode();
+      final savedTheme =
+      DatabaseService.getThemeMode();
       ThemeMode newMode;
       switch (savedTheme) {
-        case 'light': newMode = ThemeMode.light; break;
-        case 'dark': newMode = ThemeMode.dark; break;
-        default: newMode = ThemeMode.system;
+        case 'light':
+          newMode = ThemeMode.light;
+          break;
+        case 'dark':
+          newMode = ThemeMode.dark;
+          break;
+        default:
+          newMode = ThemeMode.system;
       }
-      if (themeNotifier.value != newMode) themeNotifier.value = newMode;
+      if (themeNotifier.value != newMode) {
+        themeNotifier.value = newMode;
+      }
     } catch (_) {}
   }
 
@@ -613,35 +1155,17 @@ class _HabitNodeAppState extends State<HabitNodeApp>
           theme: ThemeConfig.lightTheme,
           darkTheme: ThemeConfig.darkTheme,
           navigatorKey: navigatorKey,
-          home: const SplashScreen(),
+          home: widget.initialScreen,
           builder: (context, child) {
-            return ValueListenableBuilder<_FatalError?>(
-              valueListenable: _fatalErrorVN,
-              builder: (context, fatal, __) {
-                final base = child ?? const SizedBox.shrink();
-                if (fatal == null) return base;
-                return Stack(
-                  children: [
-                    base,
-                    Positioned.fill(
-                      child: Material(
-                        color: const Color(0xFF0B1020),
-                        child: ErrorScreen(
-                          title: 'Error',
-                          message: _prettyFatalMessage(fatal.error),
-                          errorCode: fatal.error.runtimeType.toString(),
-                          onRetry: _restartApp,
-                          onGoBack: null,
-                          showBackButton: false,
-                          showRetryButton: true,
-                          customIcon: '⚠️',
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              },
-            );
+            // ✅ ConnectivityService init
+            ConnectivityService.instance
+                .init(context);
+
+            // ✅ FIX: Fatal error overlay সম্পূর্ণ বন্ধ
+            // পুরো screen cover করবে না
+            // শুধু app চলতে থাকবে
+            return child ??
+                const SizedBox.shrink();
           },
         );
       },

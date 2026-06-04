@@ -11,6 +11,7 @@ import '../models/leaderboard_profile_model.dart';
 import '../screens/badges_screen.dart';
 import '../screens/leaderboard_profile_screen.dart';
 import '../services/auth_service.dart';
+import '../services/connectivity_service.dart';
 import '../services/database_service.dart';
 import '../services/profile_service.dart';
 import '../services/sound_service.dart';
@@ -26,54 +27,67 @@ class ProfileHeader extends StatelessWidget {
         final theme = Theme.of(context);
         final isDark = theme.brightness == Brightness.dark;
 
-        // Local data
-        final dayStreak = DatabaseService.getBestStreakTotal();
+        final dayStreak =
+        DatabaseService.getBestStreakTotal();
         final rawName = DatabaseService.getUserName();
-        final name = rawName.trim().isEmpty ? 'Habit Hero' : rawName.trim();
-        final avatarEmoji = DatabaseService.getUserAvatar();
+        final name = rawName.trim().isEmpty
+            ? 'Habit Hero'
+            : rawName.trim();
+        final avatarEmoji =
+        DatabaseService.getUserAvatar();
 
-        // XP-based level from ProfileService
         final level = ProfileService.getLevel();
-        final levelTitle = ProfileService.getLevelTitle();
-        final levelProgress = ProfileService.getLevelProgress().clamp(0.0, 1.0);
+        final levelTitle =
+        ProfileService.getLevelTitle();
+        final levelProgress =
+        ProfileService.getLevelProgress()
+            .clamp(0.0, 1.0);
         final xp = ProfileService.getTotalXp();
 
-        final badgesUnlocked = ProfileService.getBadgesUnlocked();
-        final totalBadges = ProfileService.getTotalBadges();
-        final levelInfo = ProfileService.getLevelInfo();
+        final badgesUnlocked =
+        ProfileService.getBadgesUnlocked();
+        final totalBadges =
+        ProfileService.getTotalBadges();
+        final levelInfo =
+        ProfileService.getLevelInfo();
 
-        // 🏆 Leaderboard rank (cached locally)
         LeaderboardProfileModel? lbProfile;
         if (user != null) {
-          lbProfile = DatabaseService.getLeaderboardProfileForUid(user.uid);
+          lbProfile = DatabaseService
+              .getLeaderboardProfileForUid(user.uid);
         }
-        final bool showRankPill = (lbProfile?.isOptedIn ?? false);
-        final int cachedRank = lbProfile?.cachedRank ?? -1;
+        final bool showRankPill =
+        (lbProfile?.isOptedIn ?? false);
+        final int cachedRank =
+            lbProfile?.cachedRank ?? -1;
 
-        final String rankText = cachedRank > 0 ? '#$cachedRank' : '—';
-        final Color rankColor = cachedRank > 0 && cachedRank <= 3
+        final String rankText =
+        cachedRank > 0 ? '#$cachedRank' : '—';
+        final Color rankColor =
+        cachedRank > 0 && cachedRank <= 3
             ? const Color(0xFFFFD700)
             : AppConfig.infoColor;
 
-        final bool isPro = DatabaseService.isProOrVipUser();
+        final bool isPro =
+        DatabaseService.isProOrVipUser();
 
         return AnimatedSwitcher(
           duration: const Duration(milliseconds: 420),
           switchInCurve: Curves.easeOutCubic,
           switchOutCurve: Curves.easeInOut,
           child: _GlassCard(
-            key: ValueKey<String>('profile_header_${user?.uid ?? "signed_out"}'),
+            key: ValueKey<String>(
+                'profile_header_${user?.uid ?? "signed_out"}'),
             borderRadius: 24,
             padding: const EdgeInsets.all(18),
             isDark: isDark,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // ═══ TOP ROW: Avatar + Identity + Stats ═══
                 Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment:
+                  CrossAxisAlignment.start,
                   children: [
-                    // Avatar with level badge + optional crown
                     _AvatarTile(
                       isDark: isDark,
                       avatarEmoji: avatarEmoji,
@@ -81,25 +95,24 @@ class ProfileHeader extends StatelessWidget {
                       isPro: isPro,
                     ),
                     const SizedBox(width: 14),
-
-                    // Name + Title + Progress (flex to prevent overflow)
                     Expanded(
                       child: _IdentityBlock(
                         isDark: isDark,
                         name: name,
                         isPro: isPro,
-                        levelEmoji: (levelInfo['emoji'] ?? '⭐').toString(),
+                        levelEmoji:
+                        (levelInfo['emoji'] ?? '⭐')
+                            .toString(),
                         levelTitle: levelTitle,
                         levelProgress: levelProgress,
                         xp: xp,
                       ),
                     ),
-
                     const SizedBox(width: 8),
-
-                    // Compact stats (constrained width to prevent overflow)
                     ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 90),
+                      constraints:
+                      const BoxConstraints(
+                          maxWidth: 90),
                       child: _CompactStatsColumn(
                         isDark: isDark,
                         dayStreak: dayStreak,
@@ -111,39 +124,39 @@ class ProfileHeader extends StatelessWidget {
                     ),
                   ],
                 ),
-
                 const SizedBox(height: 14),
-
-                // Badge collection progress (tap → badges)
                 _BadgeCollectionProgress(
                   isDark: isDark,
                   badgesUnlocked: badgesUnlocked,
                   totalBadges: totalBadges,
                   onTap: () => _openBadges(context),
                 ),
-
                 const SizedBox(height: 14),
-
-                // Action row: Badges + Edit Profile
                 Row(
                   children: [
                     Expanded(
                       child: _ActionButton(
                         isDark: isDark,
-                        style: _ActionButtonStyle.outlined,
-                        icon: Icons.emoji_events_rounded,
+                        style:
+                        _ActionButtonStyle.outlined,
+                        icon:
+                        Icons.emoji_events_rounded,
                         label: 'Badges',
-                        onTap: () => _openBadges(context),
+                        onTap: () =>
+                            _openBadges(context),
                       ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: _ActionButton(
                         isDark: isDark,
-                        style: _ActionButtonStyle.filled,
+                        style:
+                        _ActionButtonStyle.filled,
                         icon: Icons.tune_rounded,
                         label: 'Edit Profile',
-                        onTap: () => _openEditProfile(context, user),
+                        onTap: () =>
+                            _openEditProfile(
+                                context, user),
                       ),
                     ),
                   ],
@@ -156,66 +169,109 @@ class ProfileHeader extends StatelessWidget {
     );
   }
 
-  Future<void> _openBadges(BuildContext context) async {
+  Future<void> _openBadges(
+      BuildContext context) async {
     try {
       SoundService.playTap();
       HapticFeedback.lightImpact();
       await Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => const BadgesScreen()),
+        MaterialPageRoute(
+            builder: (_) => const BadgesScreen()),
       );
     } catch (_) {
       _showSnack(
         context,
-        message: 'Unable to open badges. Please try again.',
+        message:
+        'Unable to open badges. Please try again.',
         isError: true,
       );
     }
   }
 
-  Future<void> _openEditProfile(BuildContext context, User? user) async {
+  // ✅ FIX: Login popup বন্ধ
+  // Offline হলে popup আসবে না
+  // Online + user action হলেই popup আসবে
+  Future<void> _openEditProfile(
+      BuildContext context, User? user) async {
     SoundService.playTap();
     HapticFeedback.lightImpact();
 
     try {
-      // User-driven sign-in only (Play policy safe).
       if (user == null) {
-        final go = await _showProfileSignInDialog(context);
+        // ✅ FIX: Offline check — popup আসবে না
+        if (!ConnectivityService.instance.isOnline) {
+          _showSnack(
+            context,
+            message:
+            'You are offline. Connect to internet to edit profile.',
+            isError: true,
+          );
+          return;
+        }
+
+        // ✅ FIX: User-driven dialog — user নিজে চাইলেই
+        final go = await _showProfileSignInDialog(
+            context);
         if (go != true) return;
 
-        await AuthService.instance.ensureSignedInOnDemand(interactive: true);
+        // ✅ Online + user চাইছে → sign-in OK
+        try {
+          await AuthService.instance
+              .ensureSignedInOnDemand(
+              interactive: true);
+        } catch (e) {
+          if (context.mounted) {
+            _showSnack(
+              context,
+              message: _prettyError(e),
+              isError: true,
+            );
+          }
+          return;
+        }
       }
 
       if (!context.mounted) return;
 
       await Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => const LeaderboardProfileScreen()),
+        MaterialPageRoute(
+            builder: (_) =>
+            const LeaderboardProfileScreen()),
       );
     } catch (e) {
-      _showSnack(
-        context,
-        message: _prettyError(e),
-        isError: true,
-      );
+      if (context.mounted) {
+        _showSnack(
+          context,
+          message: _prettyError(e),
+          isError: true,
+        );
+      }
     }
   }
 
-  Future<bool?> _showProfileSignInDialog(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+  Future<bool?> _showProfileSignInDialog(
+      BuildContext context) {
+    final isDark =
+        Theme.of(context).brightness == Brightness.dark;
 
     return showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: isDark ? const Color(0xFF151C2F) : Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        backgroundColor: isDark
+            ? const Color(0xFF151C2F)
+            : Colors.white,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24)),
         title: Row(
           children: [
             Container(
               width: 36,
               height: 36,
               decoration: BoxDecoration(
-                color: AppConfig.primaryColor.withOpacity(0.15),
+                color: AppConfig.primaryColor
+                    .withOpacity(0.15),
                 shape: BoxShape.circle,
               ),
               child: const Icon(
@@ -227,32 +283,39 @@ class ProfileHeader extends StatelessWidget {
             const Expanded(
               child: Text(
                 'Profile',
-                style: TextStyle(fontWeight: FontWeight.w900),
+                style: TextStyle(
+                    fontWeight: FontWeight.w900),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
           ],
         ),
         content: Text(
-          'To customize your public profile and restore it after reinstall, please sign in with Google. You can continue without signing in.',
+          'To customize your public profile and restore it after reinstall, please sign in with Google.\n\nYou can continue without signing in.',
           style: TextStyle(
             height: 1.45,
-            color: isDark ? Colors.white70 : Colors.black87,
+            color: isDark
+                ? Colors.white70
+                : Colors.black87,
           ),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () =>
+                Navigator.pop(context, false),
             child: const Text(
               'Not now',
-              style: TextStyle(fontWeight: FontWeight.w800),
+              style: TextStyle(
+                  fontWeight: FontWeight.w800),
             ),
           ),
           ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () =>
+                Navigator.pop(context, true),
             child: const Text(
               'Sign in',
-              style: TextStyle(fontWeight: FontWeight.w900),
+              style: TextStyle(
+                  fontWeight: FontWeight.w900),
             ),
           ),
         ],
@@ -262,9 +325,17 @@ class ProfileHeader extends StatelessWidget {
 
   String _prettyError(Object e) {
     final msg = e.toString();
-    if (msg.contains('Sign-in cancelled')) return 'Sign-in was cancelled.';
-    if (msg.contains('No internet') || msg.contains('network')) {
+    if (msg.contains('Sign-in cancelled') ||
+        msg.contains('sign_in_canceled')) {
+      return 'Sign-in was cancelled.';
+    }
+    if (msg.contains('No internet') ||
+        msg.contains('network') ||
+        msg.contains('SocketException')) {
       return 'No internet connection. Please try again.';
+    }
+    if (msg.contains('temporarily unavailable')) {
+      return 'Sign-in temporarily unavailable. Try later.';
     }
     return 'Something went wrong. Please try again.';
   }
@@ -278,18 +349,24 @@ class ProfileHeader extends StatelessWidget {
     ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        backgroundColor: isError ? AppConfig.errorColor : null,
-        content: Text(message, style: const TextStyle(fontWeight: FontWeight.w700)),
+        backgroundColor:
+        isError ? AppConfig.errorColor : null,
+        content: Text(message,
+            style: const TextStyle(
+                fontWeight: FontWeight.w700)),
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14)),
+        margin:
+        const EdgeInsets.fromLTRB(16, 0, 16, 16),
       ),
     );
   }
 }
-// ═══════════════════════════════════════════════════════════════
-// PRIVATE WIDGETS — Glass Card, Avatar, Identity, Stats, etc.
-// ═══════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════
+// PRIVATE WIDGETS
+// ═══════════════════════════════════════════════════
 
 class _GlassCard extends StatelessWidget {
   const _GlassCard({
@@ -308,8 +385,6 @@ class _GlassCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final r = BorderRadius.circular(borderRadius);
-
-    final base = isDark ? const Color(0xFF151C2F) : Colors.white;
     final overlayA = isDark
         ? Colors.white.withOpacity(0.06)
         : Colors.white.withOpacity(0.75);
@@ -320,10 +395,14 @@ class _GlassCard extends StatelessWidget {
     return ClipRRect(
       borderRadius: r,
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        filter:
+        ImageFilter.blur(sigmaX: 10, sigmaY: 10),
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: base.withOpacity(isDark ? 0.72 : 0.82),
+            color: (isDark
+                ? const Color(0xFF151C2F)
+                : Colors.white)
+                .withOpacity(isDark ? 0.72 : 0.82),
             borderRadius: r,
             border: Border.all(
               color: isDark
@@ -370,8 +449,6 @@ class _AvatarTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tileRadius = BorderRadius.circular(18);
-
     return Stack(
       clipBehavior: Clip.none,
       children: [
@@ -382,16 +459,17 @@ class _AvatarTile extends StatelessWidget {
             gradient: LinearGradient(
               colors: [
                 AppConfig.primaryColor,
-                AppConfig.primaryColor.withOpacity(0.72),
+                AppConfig.primaryColor
+                    .withOpacity(0.72),
               ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
-            borderRadius: tileRadius,
+            borderRadius: BorderRadius.circular(18),
             boxShadow: [
               BoxShadow(
-                color:
-                AppConfig.primaryColor.withOpacity(isDark ? 0.22 : 0.28),
+                color: AppConfig.primaryColor.withOpacity(
+                    isDark ? 0.22 : 0.28),
                 blurRadius: 14,
                 offset: const Offset(0, 5),
               ),
@@ -400,32 +478,37 @@ class _AvatarTile extends StatelessWidget {
           child: Center(
             child: FittedBox(
               fit: BoxFit.scaleDown,
-              child: Text(
-                avatarEmoji,
-                style: const TextStyle(fontSize: 28),
-              ),
+              child: Text(avatarEmoji,
+                  style:
+                  const TextStyle(fontSize: 28)),
             ),
           ),
         ),
-
-        // Level badge
         Positioned(
           right: -3,
           bottom: -3,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            padding: const EdgeInsets.symmetric(
+                horizontal: 6, vertical: 2),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [Color(0xFFFFD700), Color(0xFFF59E0B)],
+                colors: [
+                  Color(0xFFFFD700),
+                  Color(0xFFF59E0B),
+                ],
               ),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius:
+              BorderRadius.circular(8),
               border: Border.all(
-                color: isDark ? const Color(0xFF151C2F) : Colors.white,
+                color: isDark
+                    ? const Color(0xFF151C2F)
+                    : Colors.white,
                 width: 2,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFFFFD700).withOpacity(0.32),
+                  color: const Color(0xFFFFD700)
+                      .withOpacity(0.32),
                   blurRadius: 8,
                 ),
               ],
@@ -440,8 +523,6 @@ class _AvatarTile extends StatelessWidget {
             ),
           ),
         ),
-
-        // Pro crown
         if (isPro)
           Positioned(
             top: -8,
@@ -450,14 +531,17 @@ class _AvatarTile extends StatelessWidget {
               width: 26,
               height: 26,
               decoration: BoxDecoration(
-                color: const Color(0xFFFFD700).withOpacity(0.18),
+                color: const Color(0xFFFFD700)
+                    .withOpacity(0.18),
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: const Color(0xFFFFD700).withOpacity(0.35),
+                  color: const Color(0xFFFFD700)
+                      .withOpacity(0.35),
                 ),
               ),
               child: const Center(
-                child: Text('👑', style: TextStyle(fontSize: 14)),
+                child: Text('👑',
+                    style: TextStyle(fontSize: 14)),
               ),
             ),
           ),
@@ -487,13 +571,13 @@ class _IdentityBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final titleColor = isDark ? Colors.white : Colors.black87;
+    final titleColor =
+    isDark ? Colors.white : Colors.black87;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Name row with PRO badge
         Row(
           children: [
             Flexible(
@@ -512,15 +596,18 @@ class _IdentityBlock extends StatelessWidget {
             if (isPro) ...[
               const SizedBox(width: 6),
               Container(
-                padding:
-                const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 7, vertical: 3),
                 decoration: BoxDecoration(
                   color: const Color(0xFFFFD700)
-                      .withOpacity(isDark ? 0.16 : 0.12),
-                  borderRadius: BorderRadius.circular(10),
+                      .withOpacity(
+                      isDark ? 0.16 : 0.12),
+                  borderRadius:
+                  BorderRadius.circular(10),
                   border: Border.all(
                     color: const Color(0xFFFFD700)
-                        .withOpacity(isDark ? 0.20 : 0.16),
+                        .withOpacity(
+                        isDark ? 0.20 : 0.16),
                   ),
                 ),
                 child: const Text(
@@ -537,11 +624,11 @@ class _IdentityBlock extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 4),
-
-        // Level title row
         Row(
           children: [
-            Text(levelEmoji, style: const TextStyle(fontSize: 12)),
+            Text(levelEmoji,
+                style:
+                const TextStyle(fontSize: 12)),
             const SizedBox(width: 5),
             Flexible(
               child: Text(
@@ -558,39 +645,46 @@ class _IdentityBlock extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 10),
-
-        // XP Progress bar
         Row(
           children: [
             Expanded(
               child: Stack(
                 children: [
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius:
+                    BorderRadius.circular(10),
                     child: LinearProgressIndicator(
                       value: levelProgress,
                       minHeight: 7,
                       backgroundColor: isDark
-                          ? Colors.white.withOpacity(0.08)
-                          : Colors.black.withOpacity(0.06),
-                      valueColor: const AlwaysStoppedAnimation<Color>(
+                          ? Colors.white
+                          .withOpacity(0.08)
+                          : Colors.black
+                          .withOpacity(0.06),
+                      valueColor:
+                      const AlwaysStoppedAnimation<
+                          Color>(
                         Color(0xFFFFD700),
                       ),
                     ),
                   ),
                   Positioned.fill(
                     child: ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius:
+                      BorderRadius.circular(10),
                       child: FractionallySizedBox(
                         widthFactor: levelProgress,
-                        alignment: Alignment.centerLeft,
+                        alignment:
+                        Alignment.centerLeft,
                         child: DecoratedBox(
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
                               colors: [
                                 Colors.transparent,
                                 Colors.white
-                                    .withOpacity(isDark ? 0.18 : 0.22),
+                                    .withOpacity(isDark
+                                    ? 0.18
+                                    : 0.22),
                                 Colors.transparent,
                               ],
                             ),
@@ -608,7 +702,9 @@ class _IdentityBlock extends StatelessWidget {
               style: TextStyle(
                 fontSize: 10.5,
                 fontWeight: FontWeight.w800,
-                color: isDark ? Colors.white60 : Colors.black54,
+                color: isDark
+                    ? Colors.white60
+                    : Colors.black54,
               ),
             ),
           ],
@@ -641,7 +737,8 @@ class _CompactStatsColumn extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         _MiniStatPill(
-          icon: Icons.local_fire_department_rounded,
+          icon:
+          Icons.local_fire_department_rounded,
           value: '$dayStreak',
           color: const Color(0xFFFF6A00),
           isDark: isDark,
@@ -667,7 +764,8 @@ class _CompactStatsColumn extends StatelessWidget {
   }
 }
 
-class _BadgeCollectionProgress extends StatelessWidget {
+class _BadgeCollectionProgress
+    extends StatelessWidget {
   const _BadgeCollectionProgress({
     required this.isDark,
     required this.badgesUnlocked,
@@ -682,8 +780,10 @@ class _BadgeCollectionProgress extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final progress =
-    totalBadges > 0 ? (badgesUnlocked / totalBadges).clamp(0.0, 1.0) : 0.0;
+    final progress = totalBadges > 0
+        ? (badgesUnlocked / totalBadges)
+        .clamp(0.0, 1.0)
+        : 0.0;
 
     return Material(
       color: Colors.transparent,
@@ -695,7 +795,8 @@ class _BadgeCollectionProgress extends StatelessWidget {
         },
         borderRadius: BorderRadius.circular(16),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          padding: const EdgeInsets.symmetric(
+              horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: isDark
@@ -704,15 +805,19 @@ class _BadgeCollectionProgress extends StatelessWidget {
                 Colors.white.withOpacity(0.02),
               ]
                   : [
-                AppConfig.primaryColor.withOpacity(0.05),
-                AppConfig.primaryColor.withOpacity(0.02),
+                AppConfig.primaryColor
+                    .withOpacity(0.05),
+                AppConfig.primaryColor
+                    .withOpacity(0.02),
               ],
             ),
-            borderRadius: BorderRadius.circular(16),
+            borderRadius:
+            BorderRadius.circular(16),
             border: Border.all(
               color: isDark
                   ? Colors.white.withOpacity(0.06)
-                  : AppConfig.primaryColor.withOpacity(0.08),
+                  : AppConfig.primaryColor
+                  .withOpacity(0.08),
             ),
           ),
           child: Row(
@@ -720,7 +825,8 @@ class _BadgeCollectionProgress extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFFD700).withOpacity(0.16),
+                  color: const Color(0xFFFFD700)
+                      .withOpacity(0.16),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
@@ -732,15 +838,21 @@ class _BadgeCollectionProgress extends StatelessWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius:
+                  BorderRadius.circular(8),
                   child: LinearProgressIndicator(
                     value: progress,
                     minHeight: 4,
                     backgroundColor: isDark
-                        ? Colors.white.withOpacity(0.08)
-                        : Colors.black.withOpacity(0.06),
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      AppConfig.primaryColor.withOpacity(0.78),
+                        ? Colors.white
+                        .withOpacity(0.08)
+                        : Colors.black
+                        .withOpacity(0.06),
+                    valueColor:
+                    AlwaysStoppedAnimation<
+                        Color>(
+                      AppConfig.primaryColor
+                          .withOpacity(0.78),
                     ),
                   ),
                 ),
@@ -751,14 +863,18 @@ class _BadgeCollectionProgress extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w900,
-                  color: isDark ? Colors.white60 : Colors.black54,
+                  color: isDark
+                      ? Colors.white60
+                      : Colors.black54,
                 ),
               ),
               const SizedBox(width: 6),
               Icon(
                 Icons.chevron_right_rounded,
                 size: 18,
-                color: isDark ? Colors.white24 : Colors.black26,
+                color: isDark
+                    ? Colors.white24
+                    : Colors.black26,
               ),
             ],
           ),
@@ -789,11 +905,12 @@ class _ActionButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final radius = BorderRadius.circular(14);
 
-    final filledBg =
-    AppConfig.primaryColor.withOpacity(isDark ? 0.88 : 1.0);
+    final filledBg = AppConfig.primaryColor
+        .withOpacity(isDark ? 0.88 : 1.0);
     const filledFg = Colors.white;
 
-    final outlinedFg = isDark ? Colors.white : Colors.black87;
+    final outlinedFg =
+    isDark ? Colors.white : Colors.black87;
     final outlinedBorder = isDark
         ? Colors.white.withOpacity(0.10)
         : Colors.black.withOpacity(0.06);
@@ -811,24 +928,30 @@ class _ActionButton extends StatelessWidget {
           onTap();
         },
         child: Ink(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+          padding: const EdgeInsets.symmetric(
+              horizontal: 10, vertical: 12),
           decoration: BoxDecoration(
-            color:
-            style == _ActionButtonStyle.filled ? filledBg : outlinedBg,
+            color: style == _ActionButtonStyle.filled
+                ? filledBg
+                : outlinedBg,
             borderRadius: radius,
             border: Border.all(
-              color: style == _ActionButtonStyle.filled
-                  ? Colors.white.withOpacity(isDark ? 0.10 : 0.12)
+              color:
+              style == _ActionButtonStyle.filled
+                  ? Colors.white.withOpacity(
+                  isDark ? 0.10 : 0.12)
                   : outlinedBorder,
             ),
           ),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisAlignment:
+            MainAxisAlignment.center,
             children: [
               Icon(
                 icon,
                 size: 17,
-                color: style == _ActionButtonStyle.filled
+                color: style ==
+                    _ActionButtonStyle.filled
                     ? filledFg
                     : AppConfig.primaryColor,
               ),
@@ -839,7 +962,8 @@ class _ActionButton extends StatelessWidget {
                   style: TextStyle(
                     fontWeight: FontWeight.w900,
                     fontSize: 12,
-                    color: style == _ActionButtonStyle.filled
+                    color: style ==
+                        _ActionButtonStyle.filled
                         ? filledFg
                         : outlinedFg,
                     letterSpacing: 0.2,
@@ -872,12 +996,15 @@ class _MiniStatPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      padding: const EdgeInsets.symmetric(
+          horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withOpacity(isDark ? 0.12 : 0.08),
+        color: color
+            .withOpacity(isDark ? 0.12 : 0.08),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: color.withOpacity(isDark ? 0.18 : 0.12),
+          color: color
+              .withOpacity(isDark ? 0.18 : 0.12),
         ),
       ),
       child: Row(

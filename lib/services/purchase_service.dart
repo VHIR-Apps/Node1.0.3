@@ -9,26 +9,7 @@ import 'package:in_app_purchase_android/in_app_purchase_android.dart';
 import '../config/app_config.dart';
 import 'database_service.dart';
 
-/// PurchaseService
-///
-/// Responsibilities:
-/// 1) Local Pro unlock (app features):
-///    - Based on IAP purchase/restored status.
-///    - Stored locally via DatabaseService (is_pro, purchased_plan).
-///
-/// 2) Secure "Pro crown" for public/leaderboard display (trusted, cannot be faked):
-///    - MUST come from a server/admin verified source.
-///    - This service supports Firebase custom claims verification (read-only):
-///        claim key: `proVerified` (bool)
-///
-/// IMPORTANT:
-/// - Do NOT write "isProVerified" to Firestore from client.
-///   Any client-written "pro" flag can be faked.
-///
-/// How to enable verified crowns (recommended):
-/// - Use Cloud Functions / Admin SDK to set custom claims:
-///     admin.auth().setCustomUserClaims(uid, { proVerified: true })
-/// - Then force the user to refresh token (re-sign-in or token refresh).
+
 class PurchaseService {
   static final InAppPurchase _iap = InAppPurchase.instance;
   static StreamSubscription<List<PurchaseDetails>>? _subscription;

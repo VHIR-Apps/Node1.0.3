@@ -2,6 +2,8 @@
 
 import 'package:hive/hive.dart';
 
+const _clearValue = Object();
+
 class LeaderboardProfileModel extends HiveObject {
   final String uid;
   String displayName;
@@ -33,7 +35,6 @@ class LeaderboardProfileModel extends HiveObject {
   int lastDailyResetMs;
   int lastWeeklyResetMs;
 
-  // 🚀 NEW SOCIAL FIELDS
   List<Map<String, dynamic>> posts;
   List<String> blockedUsers;
   bool isProUser;
@@ -95,7 +96,9 @@ class LeaderboardProfileModel extends HiveObject {
       uid: uid,
       displayName: safeDisplayName(displayName),
       tagline: safeOptionalShortText(tagline, maxLen: 64),
-      countryCode: (countryCode?.trim().isEmpty ?? true) ? null : countryCode!.trim().toUpperCase(),
+      countryCode: (countryCode?.trim().isEmpty ?? true)
+          ? null
+          : countryCode!.trim().toUpperCase(),
       createdAt: now,
       updatedAt: now,
       isOptedIn: isOptedIn,
@@ -107,7 +110,8 @@ class LeaderboardProfileModel extends HiveObject {
       bio: safeOptionalShortText(bio, maxLen: 220),
       joinedAtMs: joinMs,
       isInterviewUser: isInterviewUser,
-      profileThemeIndex: profileThemeIndex < 0 ? 0 : profileThemeIndex,
+      profileThemeIndex:
+      profileThemeIndex < 0 ? 0 : profileThemeIndex,
       lastCloudSyncAt: null,
       cachedRank: -1,
       cachedScore: 0,
@@ -125,25 +129,25 @@ class LeaderboardProfileModel extends HiveObject {
 
   void touchUpdated() {
     updatedAt = DateTime.now();
-    lastActiveMs = DateTime.now().toUtc().millisecondsSinceEpoch;
+    lastActiveMs =
+        DateTime.now().toUtc().millisecondsSinceEpoch;
   }
 
-  // 🚀 THE MISSING copyWith METHOD RESTORED
   LeaderboardProfileModel copyWith({
     String? displayName,
-    String? tagline,
-    String? countryCode,
+    Object? tagline = _clearValue,
+    Object? bio = _clearValue,
+    Object? countryCode = _clearValue,
+    Object? lastCloudSyncAt = _clearValue,
     bool? isOptedIn,
     bool? showLevel,
     bool? showBadges,
     bool? showStudyHours,
     String? avatarEmoji,
     int? avatarIndex,
-    String? bio,
     int? joinedAtMs,
     bool? isInterviewUser,
     int? profileThemeIndex,
-    DateTime? lastCloudSyncAt,
     int? cachedRank,
     double? cachedScore,
     int? dailyScore,
@@ -156,35 +160,86 @@ class LeaderboardProfileModel extends HiveObject {
     int? lastActiveMs,
     List<String>? unlockedBadges,
   }) {
+    String? resolvedTagline;
+    if (identical(tagline, _clearValue)) {
+      resolvedTagline = this.tagline;
+    } else if (tagline == null ||
+        (tagline is String && tagline.trim().isEmpty)) {
+      resolvedTagline = null;
+    } else {
+      resolvedTagline = safeOptionalShortText(
+          tagline as String,
+          maxLen: 64);
+    }
+
+    String? resolvedBio;
+    if (identical(bio, _clearValue)) {
+      resolvedBio = this.bio;
+    } else if (bio == null ||
+        (bio is String && bio.trim().isEmpty)) {
+      resolvedBio = null;
+    } else {
+      resolvedBio = safeOptionalShortText(
+          bio as String,
+          maxLen: 220);
+    }
+
+    String? resolvedCountry;
+    if (identical(countryCode, _clearValue)) {
+      resolvedCountry = this.countryCode;
+    } else if (countryCode == null ||
+        (countryCode is String &&
+            countryCode.trim().isEmpty)) {
+      resolvedCountry = null;
+    } else {
+      resolvedCountry =
+          (countryCode as String).trim().toUpperCase();
+    }
+
+    DateTime? resolvedLastSync;
+    if (identical(lastCloudSyncAt, _clearValue)) {
+      resolvedLastSync = this.lastCloudSyncAt;
+    } else {
+      resolvedLastSync = lastCloudSyncAt as DateTime?;
+    }
+
     return LeaderboardProfileModel(
       uid: uid,
       displayName: displayName ?? this.displayName,
-      tagline: tagline == null ? this.tagline : safeOptionalShortText(tagline, maxLen: 64),
-      countryCode: countryCode ?? this.countryCode,
+      tagline: resolvedTagline,
+      countryCode: resolvedCountry,
       createdAt: createdAt,
       updatedAt: DateTime.now(),
       isOptedIn: isOptedIn ?? this.isOptedIn,
       showLevel: showLevel ?? this.showLevel,
       showBadges: showBadges ?? this.showBadges,
-      showStudyHours: showStudyHours ?? this.showStudyHours,
-      avatarEmoji: avatarEmoji ?? this.avatarEmoji,
+      showStudyHours:
+      showStudyHours ?? this.showStudyHours,
+      avatarEmoji: avatarEmoji != null
+          ? safeEmoji(avatarEmoji)
+          : this.avatarEmoji,
       avatarIndex: avatarIndex ?? this.avatarIndex,
-      bio: bio == null ? this.bio : safeOptionalShortText(bio, maxLen: 220),
+      bio: resolvedBio,
       joinedAtMs: joinedAtMs ?? this.joinedAtMs,
-      isInterviewUser: isInterviewUser ?? this.isInterviewUser,
-      profileThemeIndex: profileThemeIndex ?? this.profileThemeIndex,
-      lastCloudSyncAt: lastCloudSyncAt ?? this.lastCloudSyncAt,
+      isInterviewUser:
+      isInterviewUser ?? this.isInterviewUser,
+      profileThemeIndex:
+      profileThemeIndex ?? this.profileThemeIndex,
+      lastCloudSyncAt: resolvedLastSync,
       cachedRank: cachedRank ?? this.cachedRank,
       cachedScore: cachedScore ?? this.cachedScore,
       dailyScore: dailyScore ?? this.dailyScore,
       weeklyScore: weeklyScore ?? this.weeklyScore,
-      lastDailyResetMs: lastDailyResetMs ?? this.lastDailyResetMs,
-      lastWeeklyResetMs: lastWeeklyResetMs ?? this.lastWeeklyResetMs,
+      lastDailyResetMs:
+      lastDailyResetMs ?? this.lastDailyResetMs,
+      lastWeeklyResetMs:
+      lastWeeklyResetMs ?? this.lastWeeklyResetMs,
       posts: posts ?? this.posts,
       blockedUsers: blockedUsers ?? this.blockedUsers,
       isProUser: isProUser ?? this.isProUser,
       lastActiveMs: lastActiveMs ?? this.lastActiveMs,
-      unlockedBadges: unlockedBadges ?? this.unlockedBadges,
+      unlockedBadges:
+      unlockedBadges ?? this.unlockedBadges,
     );
   }
 
@@ -198,9 +253,9 @@ class LeaderboardProfileModel extends HiveObject {
     return <String, dynamic>{
       'uid': uid,
       'displayName': displayName,
-      'tagline': tagline,
-      'bio': bio,
-      'countryCode': countryCode,
+      'tagline': tagline ?? '',
+      'bio': bio ?? '',
+      'countryCode': countryCode ?? '',
       'avatarEmoji': avatarEmoji,
       'avatarIndex': avatarIndex,
       'joinedAtMs': joinedAtMs,
@@ -229,7 +284,8 @@ class LeaderboardProfileModel extends HiveObject {
       'updatedAt': nowUtc.toIso8601String(),
       'updatedAtMs': nowUtc.millisecondsSinceEpoch,
       'createdAt': createdAt.toUtc().toIso8601String(),
-      'createdAtMs': createdAt.toUtc().millisecondsSinceEpoch,
+      'createdAtMs':
+      createdAt.toUtc().millisecondsSinceEpoch,
     };
   }
 
@@ -246,7 +302,10 @@ class LeaderboardProfileModel extends HiveObject {
     return v;
   }
 
-  static String? safeOptionalShortText(String? raw, {required int maxLen}) {
+  static String? safeOptionalShortText(
+      String? raw, {
+        required int maxLen,
+      }) {
     final v = raw?.trim();
     if (v == null || v.isEmpty) return null;
     if (v.length <= maxLen) return v;
@@ -254,7 +313,8 @@ class LeaderboardProfileModel extends HiveObject {
   }
 }
 
-class LeaderboardProfileModelAdapter extends TypeAdapter<LeaderboardProfileModel> {
+class LeaderboardProfileModelAdapter
+    extends TypeAdapter<LeaderboardProfileModel> {
   @override
   final int typeId = 6;
 
@@ -267,25 +327,37 @@ class LeaderboardProfileModelAdapter extends TypeAdapter<LeaderboardProfileModel
       fields[key] = reader.read();
     }
 
-    final createdAt = (fields[4] as DateTime?) ?? DateTime.now();
-    final nowMs = DateTime.now().toUtc().millisecondsSinceEpoch;
+    final createdAt =
+        (fields[4] as DateTime?) ?? DateTime.now();
+    final nowMs =
+        DateTime.now().toUtc().millisecondsSinceEpoch;
 
     final postsRaw = fields[23] as List?;
-    final parsedPosts = postsRaw?.map((e) => Map<String, dynamic>.from(e as Map)).toList() ?? [];
+    final parsedPosts = postsRaw
+        ?.map((e) =>
+    Map<String, dynamic>.from(e as Map))
+        .toList() ??
+        [];
 
     final blockedRaw = fields[24] as List?;
-    final parsedBlocked = blockedRaw?.map((e) => e.toString()).toList() ?? [];
+    final parsedBlocked =
+        blockedRaw?.map((e) => e.toString()).toList() ??
+            [];
 
     final badgesRaw = fields[27] as List?;
-    final parsedBadges = badgesRaw?.map((e) => e.toString()).toList() ?? [];
+    final parsedBadges =
+        badgesRaw?.map((e) => e.toString()).toList() ??
+            [];
 
     return LeaderboardProfileModel(
       uid: (fields[0] as String?) ?? '',
-      displayName: (fields[1] as String?) ?? 'HabitNode User',
+      displayName:
+      (fields[1] as String?) ?? 'HabitNode User',
       tagline: fields[2] as String?,
       countryCode: fields[3] as String?,
       createdAt: createdAt,
-      updatedAt: (fields[5] as DateTime?) ?? DateTime.now(),
+      updatedAt:
+      (fields[5] as DateTime?) ?? DateTime.now(),
       isOptedIn: (fields[6] as bool?) ?? false,
       showLevel: (fields[7] as bool?) ?? true,
       showBadges: (fields[8] as bool?) ?? true,
@@ -296,7 +368,8 @@ class LeaderboardProfileModelAdapter extends TypeAdapter<LeaderboardProfileModel
       cachedScore: (fields[13] as double?) ?? 0.0,
       avatarIndex: (fields[14] as int?) ?? 0,
       bio: fields[15] as String?,
-      joinedAtMs: (fields[16] as int?) ?? createdAt.toUtc().millisecondsSinceEpoch,
+      joinedAtMs: (fields[16] as int?) ??
+          createdAt.toUtc().millisecondsSinceEpoch,
       isInterviewUser: (fields[17] as bool?) ?? false,
       profileThemeIndex: (fields[18] as int?) ?? 0,
       dailyScore: (fields[19] as int?) ?? 0,
@@ -312,7 +385,8 @@ class LeaderboardProfileModelAdapter extends TypeAdapter<LeaderboardProfileModel
   }
 
   @override
-  void write(BinaryWriter writer, LeaderboardProfileModel obj) {
+  void write(
+      BinaryWriter writer, LeaderboardProfileModel obj) {
     writer
       ..writeByte(28)
       ..writeByte(0)..write(obj.uid)

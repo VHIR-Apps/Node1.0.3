@@ -31,10 +31,9 @@ enum TimerStatus { stopped, running, paused }
 // ═══════════════════════════════════════
 
 class AdvancedPomodoroService {
-  // ═══════════════════════════════════════
-  // SINGLETON PATTERN
-  // ═══════════════════════════════════════
-  static final AdvancedPomodoroService _instance = AdvancedPomodoroService._internal();
+  // SINGLETON
+  static final AdvancedPomodoroService _instance =
+  AdvancedPomodoroService._internal();
   factory AdvancedPomodoroService() => _instance;
   AdvancedPomodoroService._internal();
 
@@ -43,41 +42,42 @@ class AdvancedPomodoroService {
   // ═══════════════════════════════════════
   static final ValueNotifier<int> remainingSeconds = ValueNotifier(0);
   static final ValueNotifier<double> progress = ValueNotifier(1.0);
-  static final ValueNotifier<TimerStatus> timerStatus = ValueNotifier(TimerStatus.stopped);
-  static final ValueNotifier<PomodoroState> currentState = ValueNotifier(PomodoroState.idle);
+  static final ValueNotifier<TimerStatus> timerStatus =
+  ValueNotifier(TimerStatus.stopped);
+  static final ValueNotifier<PomodoroState> currentState =
+  ValueNotifier(PomodoroState.idle);
   static final ValueNotifier<int> completedPomodoros = ValueNotifier(0);
   static final ValueNotifier<int> totalFocusMinutesToday = ValueNotifier(0);
 
-  // ═══════════════════════════════════════
   // STATE NOTIFIERS - Routine Mode
-  // ═══════════════════════════════════════
-  static final ValueNotifier<PlayMode> playMode = ValueNotifier(PlayMode.manual);
-  static final ValueNotifier<StudyRoutine?> activeRoutine = ValueNotifier(null);
+  static final ValueNotifier<PlayMode> playMode =
+  ValueNotifier(PlayMode.manual);
+  static final ValueNotifier<StudyRoutine?> activeRoutine =
+  ValueNotifier(null);
   static final ValueNotifier<int> currentRoutineIndex = ValueNotifier(0);
   static final ValueNotifier<int> routineSessionsCompleted = ValueNotifier(0);
   static final ValueNotifier<bool> isRoutineMode = ValueNotifier(false);
-  static final ValueNotifier<String> currentSubjectName = ValueNotifier('General');
-  static final ValueNotifier<Color> currentSubjectColor = ValueNotifier(const Color(0xFF6C63FF));
+  static final ValueNotifier<String> currentSubjectName =
+  ValueNotifier('General');
+  static final ValueNotifier<Color> currentSubjectColor =
+  ValueNotifier(const Color(0xFF6C63FF));
 
-  // ═══════════════════════════════════════
   // SETTINGS
-  // ═══════════════════════════════════════
   static bool autoPlayEnabled = false;
   static bool ttsAnnouncementsEnabled = true;
   static bool keepScreenOn = true;
   static bool vibrateOnComplete = true;
 
-  // ═══════════════════════════════════════
   // TIMER INTERNALS
-  // ═══════════════════════════════════════
   static DateTime? _sessionStartTime;
   static int _totalDurationSeconds = 0;
   static bool _wakelockEnabled = false;
   static bool _isRestoring = false;
 
-  // ═══════════════════════════════════════
+  // Track last notification update second to avoid spam
+  static int _lastNotifUpdateSec = -1;
+
   // CALLBACKS
-  // ═══════════════════════════════════════
   static VoidCallback? onSessionComplete;
   static VoidCallback? onRoutineComplete;
   static VoidCallback? onStateChange;
@@ -105,8 +105,13 @@ class AdvancedPomodoroService {
   }
 
   // ═══════════════════════════════════════
-  // BACKGROUND SERVICE LISTENERS
-  // ═══════════════════════════════════════
+  // BACKGROUND LISTENERS
+  // ─────────────────────────────────────────────
+  // BackgroundTimerService এখন same ID (9999) দিয়ে
+  // notification update করছে। তাই main isolate-এর
+  // TimerNotificationService আর আলাদাভাবে update
+  // করার দরকার নেই — শুধু UI state update করবে।
+  // ─────────────────────────────────────────────
   static void _setupBackgroundListeners() {
     BackgroundTimerService.onTick((remaining) {
       if (timerStatus.value == TimerStatus.running) {
@@ -115,8 +120,15 @@ class AdvancedPomodoroService {
             ? remainingSeconds.value / _totalDurationSeconds
             : 0.0;
 
+        // NOTE: Background isolate ইতিমধ্যে notification update করছে
+        // (same ID 9999, same channel)
+        // তাই এখানে আর TimerNotificationService call করার দরকার নেই।
+        // Duplicate notification এভাবে prevent হচ্ছে।
+
+        // Periodic state save (every 5 seconds)
         if (remainingSeconds.value % 5 == 0) {
-          TimerPersistenceService.updateRemainingSeconds(remainingSeconds.value);
+          TimerPersistenceService.updateRemainingSeconds(
+              remainingSeconds.value);
         }
       }
     });
@@ -163,8 +175,10 @@ class AdvancedPomodoroService {
       timerStatus.value = savedState['timer_status'] ?? TimerStatus.stopped;
       completedPomodoros.value = savedState['completed_pomodoros'] ?? 0;
 
-      currentSubjectName.value = savedState['current_subject_name'] ?? 'General';
-      currentSubjectColor.value = Color(savedState['current_subject_color_value'] ?? 0xFF6C63FF);
+      currentSubjectName.value =
+          savedState['current_subject_name'] ?? 'General';
+      currentSubjectColor.value =
+          Color(savedState['current_subject_color_value'] ?? 0xFF6C63FF);
 
       isRoutineMode.value = savedState['is_routine_mode'] ?? false;
 
@@ -174,8 +188,10 @@ class AdvancedPomodoroService {
           final routine = DatabaseService.getRoutineById(routineId);
           if (routine != null) {
             activeRoutine.value = routine;
-            currentRoutineIndex.value = savedState['current_routine_index'] ?? 0;
-            routineSessionsCompleted.value = savedState['routine_sessions_completed'] ?? 0;
+            currentRoutineIndex.value =
+                savedState['current_routine_index'] ?? 0;
+            routineSessionsCompleted.value =
+                savedState['routine_sessions_completed'] ?? 0;
             playMode.value = PlayMode.routine;
           } else {
             isRoutineMode.value = false;
@@ -190,13 +206,14 @@ class AdvancedPomodoroService {
         progress.value = remainingSeconds.value / _totalDurationSeconds;
       }
 
-      debugPrint('✅ Timer state restored: ${currentState.value}, ${remainingSeconds.value}s');
+      debugPrint(
+          '✅ Timer state restored: ${currentState.value}, ${remainingSeconds.value}s');
 
-      if (timerStatus.value == TimerStatus.running && remainingSeconds.value > 0) {
+      if (timerStatus.value == TimerStatus.running &&
+          remainingSeconds.value > 0) {
         debugPrint('▶️ Auto-resuming background timer...');
         _resumeAfterRestore();
       }
-
     } catch (e) {
       debugPrint('❌ Error restoring timer state: $e');
       await TimerPersistenceService.clearTimerState();
@@ -214,11 +231,13 @@ class AdvancedPomodoroService {
       stateLabel,
     );
 
+    // Background service will handle notification via same ID 9999
+
     onStateChange?.call();
   }
 
   // ═══════════════════════════════════════
-  // SUBJECT SELECTION (Manual Mode)
+  // SUBJECT SELECTION
   // ═══════════════════════════════════════
   static void setSubject(String subject, Color color) {
     currentSubjectName.value = subject;
@@ -275,13 +294,14 @@ class AdvancedPomodoroService {
   static Future<void> start() async {
     if (timerStatus.value == TimerStatus.running) return;
 
-    if (currentState.value == PomodoroState.idle || remainingSeconds.value <= 0) {
+    if (currentState.value == PomodoroState.idle ||
+        remainingSeconds.value <= 0) {
       currentState.value = PomodoroState.focus;
       _loadDurationForState(PomodoroState.focus);
     }
 
-    // ✅ CRITICAL FIX: Set session start time when starting a FOCUS session
-    if (currentState.value == PomodoroState.focus && _sessionStartTime == null) {
+    if (currentState.value == PomodoroState.focus &&
+        _sessionStartTime == null) {
       _sessionStartTime = DateTime.now();
       debugPrint('⏱️ Focus session started at: $_sessionStartTime');
     }
@@ -293,6 +313,9 @@ class AdvancedPomodoroService {
       remainingSeconds.value,
       stateLabel,
     );
+
+    // Background service will show notification via same ID 9999
+    // No need to call TimerNotificationService separately
 
     if (ttsAnnouncementsEnabled && isRoutineMode.value) {
       TtsService.setEnabled(true);
@@ -309,6 +332,8 @@ class AdvancedPomodoroService {
     _disableWakelock();
 
     BackgroundTimerService.pauseTimer();
+
+    // Background service will update notification to paused state
 
     await _saveCurrentState();
     onStateChange?.call();
@@ -327,6 +352,8 @@ class AdvancedPomodoroService {
       stateLabel,
     );
 
+    // Background service will update notification
+
     await _saveCurrentState();
     onStateChange?.call();
     debugPrint('▶️ Timer resumed');
@@ -341,6 +368,8 @@ class AdvancedPomodoroService {
 
     await TimerPersistenceService.clearTimerState();
     await TimerNotificationService.cancelTimerNotification();
+
+    _lastNotifUpdateSec = -1;
 
     onStateChange?.call();
     debugPrint('⏹️ Timer stopped');
@@ -362,43 +391,37 @@ class AdvancedPomodoroService {
   }
 
   // ═══════════════════════════════════════
-  // ✅ SESSION COMPLETION LOGIC (PROFESSIONAL FIX)
+  // SESSION COMPLETION LOGIC
   // ═══════════════════════════════════════
   static Future<void> _handleSessionComplete({required bool skipped}) async {
     final now = DateTime.now();
 
-    // ─────────────────────────────────────────────
-    // ✅ FOCUS SESSION COMPLETION
-    // ─────────────────────────────────────────────
     if (currentState.value == PomodoroState.focus) {
       completedPomodoros.value++;
 
-      // ✅ CRITICAL FIX: Only count ELAPSED TIME
       int actualMinutes = 0;
 
       if (_sessionStartTime != null) {
-        // Calculate how long the session actually ran
         final elapsedDuration = now.difference(_sessionStartTime!);
         actualMinutes = elapsedDuration.inMinutes;
 
-        // Minimum 1 minute if session ran for any time
         if (actualMinutes < 1 && elapsedDuration.inSeconds > 0) {
           actualMinutes = 1;
         }
 
-        debugPrint('⏱️ Session duration: ${elapsedDuration.inSeconds}s → $actualMinutes min (${skipped ? "SKIPPED" : "COMPLETED"})');
+        debugPrint(
+            '⏱️ Session duration: ${elapsedDuration.inSeconds}s → $actualMinutes min (${skipped ? "SKIPPED" : "COMPLETED"})');
       } else {
-        // Fallback: if no start time, assume 1 minute
         actualMinutes = 1;
         debugPrint('⚠️ No session start time found, defaulting to 1 minute');
       }
 
-      // ✅ Save study session with ACTUAL elapsed time
       final session = StudySession(
         id: 'study_${now.millisecondsSinceEpoch}',
         subjectName: currentSubjectName.value,
         subjectColorValue: currentSubjectColor.value.value,
-        startTime: _sessionStartTime ?? now.subtract(Duration(minutes: actualMinutes)),
+        startTime:
+        _sessionStartTime ?? now.subtract(Duration(minutes: actualMinutes)),
         endTime: now,
         durationMinutes: actualMinutes,
         sessionType: 'focus',
@@ -434,12 +457,8 @@ class AdvancedPomodoroService {
         );
       }
 
-      // ✅ Reset session start time
       _sessionStartTime = null;
 
-      // ─────────────────────────────────────────────
-      // ✅ MOVE TO NEXT STATE (ROUTINE OR MANUAL)
-      // ─────────────────────────────────────────────
       if (isRoutineMode.value && activeRoutine.value != null) {
         final routine = activeRoutine.value!;
         final currentSession = routine.sessions[currentRoutineIndex.value];
@@ -466,14 +485,10 @@ class AdvancedPomodoroService {
       if (ttsAnnouncementsEnabled && isRoutineMode.value) {
         final breakMins = remainingSeconds.value ~/ 60;
         await Future.delayed(const Duration(seconds: 2));
-        await TtsService.speak('Break time started. Relax for $breakMins minutes.');
+        await TtsService.speak(
+            'Break time started. Relax for $breakMins minutes.');
       }
-
-    }
-    // ─────────────────────────────────────────────
-    // ✅ BREAK COMPLETION (No study time added)
-    // ─────────────────────────────────────────────
-    else {
+    } else {
       SoundService.playBreakEnd();
       if (vibrateOnComplete) {
         HapticFeedback.mediumImpact();
@@ -504,7 +519,8 @@ class AdvancedPomodoroService {
 
     if (_shouldAutoPlay()) {
       await Future.delayed(const Duration(seconds: 3));
-      if (timerStatus.value == TimerStatus.stopped || timerStatus.value == TimerStatus.paused) {
+      if (timerStatus.value == TimerStatus.stopped ||
+          timerStatus.value == TimerStatus.paused) {
         await start();
       }
     }
@@ -559,7 +575,8 @@ class AdvancedPomodoroService {
 
     await TimerNotificationService.showCompletionNotification(
       title: '🎊 Routine Complete!',
-      body: 'Amazing! You finished "${routine.name}" with ${routine.sessionCount} sessions!',
+      body:
+      'Amazing! You finished "${routine.name}" with ${routine.sessionCount} sessions!',
       isFocusComplete: true,
     );
 
@@ -634,7 +651,7 @@ class AdvancedPomodoroService {
   }
 
   // ═══════════════════════════════════════
-  // HELPERS AND SETTINGS TOGGLES
+  // HELPERS
   // ═══════════════════════════════════════
   static Future<void> _announceSessionStart() async {
     if (!ttsAnnouncementsEnabled || !isRoutineMode.value) return;
@@ -648,7 +665,8 @@ class AdvancedPomodoroService {
         final sessionNum = currentRoutineIndex.value + 1;
         final totalSessions = routine.sessions.length;
 
-        if (session.customMessage != null && session.customMessage!.isNotEmpty) {
+        if (session.customMessage != null &&
+            session.customMessage!.isNotEmpty) {
           message = session.customMessage!;
         } else {
           message = 'Session $sessionNum of $totalSessions. '
@@ -711,6 +729,9 @@ class AdvancedPomodoroService {
     }
   }
 
+  // ═══════════════════════════════════════
+  // SETTING TOGGLES
+  // ═══════════════════════════════════════
   static Future<void> toggleAutoPlay() async {
     autoPlayEnabled = !autoPlayEnabled;
     await DatabaseService.setAutoPlayEnabled(autoPlayEnabled);

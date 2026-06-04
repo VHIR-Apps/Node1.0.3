@@ -19,13 +19,16 @@ class AuthServiceException implements Exception {
 }
 
 class AuthenticatedHttpClient extends http.BaseClient {
-  AuthenticatedHttpClient(this._headersProvider) : _inner = http.Client();
+  AuthenticatedHttpClient(this._headersProvider)
+      : _inner = http.Client();
 
   final http.Client _inner;
-  final Future<Map<String, String>> Function() _headersProvider;
+  final Future<Map<String, String>> Function()
+  _headersProvider;
 
   @override
-  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+  Future<http.StreamedResponse> send(
+      http.BaseRequest request) async {
     final headers = await _headersProvider();
     request.headers.addAll(headers);
     return _inner.send(request);
@@ -43,21 +46,26 @@ class AuthService {
     googleDriveUserNotifier.value = _google.currentUser;
     firebaseUserNotifier.value = _auth.currentUser;
 
-    _googleSub = _google.onCurrentUserChanged.listen((acct) {
-      googleUserNotifier.value = acct;
-      googleDriveUserNotifier.value = acct;
-    });
+    _googleSub =
+        _google.onCurrentUserChanged.listen((acct) {
+          googleUserNotifier.value = acct;
+          googleDriveUserNotifier.value = acct;
+        });
 
-    _firebaseSub = _auth.authStateChanges().listen((user) {
-      firebaseUserNotifier.value = user;
-    });
+    _firebaseSub =
+        _auth.authStateChanges().listen((user) {
+          firebaseUserNotifier.value = user;
+        });
   }
 
-  static final AuthService instance = AuthService._internal();
+  static final AuthService instance =
+  AuthService._internal();
 
-  static final FirebaseAuth _auth = FirebaseAuth.instance;
+  static final FirebaseAuth _auth =
+      FirebaseAuth.instance;
 
-  static const String _webClientIdEnv = String.fromEnvironment(
+  static const String _webClientIdEnv =
+  String.fromEnvironment(
     'HABITNODE_WEB_CLIENT_ID',
     defaultValue: '',
   );
@@ -67,7 +75,8 @@ class AuthService {
     return t.isEmpty ? null : t;
   }
 
-  static const List<String> _baseScopes = <String>[
+  static const List<String> _baseScopes =
+  <String>[
     'email',
     'profile',
   ];
@@ -80,34 +89,42 @@ class AuthService {
     scopes: _baseScopes,
   );
 
-  final ValueNotifier<GoogleSignInAccount?> googleUserNotifier =
+  final ValueNotifier<GoogleSignInAccount?>
+  googleUserNotifier =
   ValueNotifier<GoogleSignInAccount?>(null);
 
-  final ValueNotifier<GoogleSignInAccount?> googleDriveUserNotifier =
+  final ValueNotifier<GoogleSignInAccount?>
+  googleDriveUserNotifier =
   ValueNotifier<GoogleSignInAccount?>(null);
 
   final ValueNotifier<User?> firebaseUserNotifier =
   ValueNotifier<User?>(_auth.currentUser);
 
-  StreamSubscription<GoogleSignInAccount?>? _googleSub;
+  StreamSubscription<GoogleSignInAccount?>?
+  _googleSub;
   StreamSubscription<User?>? _firebaseSub;
 
   Completer<void>? _interactiveGate;
   Completer<User?>? _firebaseEnsureCompleter;
-  Completer<GoogleSignInAccount?>? _googleEnsureCompleter;
+  Completer<GoogleSignInAccount?>?
+  _googleEnsureCompleter;
 
-  GoogleSignInAccount? get currentGoogleUser => googleUserNotifier.value;
+  GoogleSignInAccount? get currentGoogleUser =>
+      googleUserNotifier.value;
 
   GoogleSignInAccount? get currentGoogleDriveUser =>
       googleDriveUserNotifier.value;
 
-  User? get currentFirebaseUser => firebaseUserNotifier.value;
+  User? get currentFirebaseUser =>
+      firebaseUserNotifier.value;
 
   User? get currentUser => firebaseUserNotifier.value;
 
-  ValueNotifier<User?> get userNotifier => firebaseUserNotifier;
+  ValueNotifier<User?> get userNotifier =>
+      firebaseUserNotifier;
 
-  bool get isFirebaseSignedIn => currentFirebaseUser != null;
+  bool get isFirebaseSignedIn =>
+      currentFirebaseUser != null;
 
   bool get isGoogleSignedIn => currentGoogleUser != null;
 
@@ -115,15 +132,20 @@ class AuthService {
 
   String? get uid => currentFirebaseUser?.uid;
 
-  String? get email => currentGoogleUser?.email ?? currentFirebaseUser?.email;
+  String? get email =>
+      currentGoogleUser?.email ??
+          currentFirebaseUser?.email;
 
   String? get displayName =>
-      currentGoogleUser?.displayName ?? currentFirebaseUser?.displayName;
+      currentGoogleUser?.displayName ??
+          currentFirebaseUser?.displayName;
 
   String? get photoURL =>
-      currentGoogleUser?.photoUrl ?? currentFirebaseUser?.photoURL;
+      currentGoogleUser?.photoUrl ??
+          currentFirebaseUser?.photoURL;
 
-  Future<T> _runExclusiveInteractive<T>(Future<T> Function() action) async {
+  Future<T> _runExclusiveInteractive<T>(
+      Future<T> Function() action) async {
     final gate = _interactiveGate;
     if (gate != null) {
       try {
@@ -138,7 +160,9 @@ class AuthService {
       return await action();
     } finally {
       if (!myGate.isCompleted) myGate.complete();
-      if (identical(_interactiveGate, myGate)) _interactiveGate = null;
+      if (identical(_interactiveGate, myGate)) {
+        _interactiveGate = null;
+      }
     }
   }
 
@@ -146,7 +170,8 @@ class AuthService {
     await ensureSignedInOnDemand(interactive: true);
   }
 
-  Future<User?> ensureSignedInOnDemand({required bool interactive}) async {
+  Future<User?> ensureSignedInOnDemand(
+      {required bool interactive}) async {
     if (isFirebaseSignedIn) {
       return currentUser;
     }
@@ -159,40 +184,44 @@ class AuthService {
     _firebaseEnsureCompleter = completer;
 
     try {
-      final acct = await ensureGoogleSignedInOnDemand(interactive: interactive);
+      final acct = await ensureGoogleSignedInOnDemand(
+          interactive: interactive);
       if (acct == null) {
         completer.complete(null);
         return null;
       }
 
-      final user = await _signInFirebaseWithGoogleAccount(acct);
+      final user =
+      await _signInFirebaseWithGoogleAccount(acct);
 
       completer.complete(user);
       return user;
     } catch (e) {
       final ex = _mapError(e);
-      if (!completer.isCompleted) completer.completeError(ex);
+      if (!completer.isCompleted) {
+        completer.completeError(ex);
+      }
       throw ex;
     } finally {
       _firebaseEnsureCompleter = null;
     }
   }
 
-  Future<GoogleSignInAccount?> ensureGoogleSignedInOnDemand({
+  // ✅ FIX: Login popup বারবার আসার সমাধান
+  // interactive=false হলে কোনো UI দেখাবে না
+  // শুধু user নিজে button চাপলেই UI আসবে
+  Future<GoogleSignInAccount?>
+  ensureGoogleSignedInOnDemand({
     required bool interactive,
     bool forceConsent = false,
     bool forceRefresh = false,
   }) async {
-    // If caller explicitly wants a fresh/consent session, we sign out/disconnect
-    // BEFORE attempting sign-in again. This is user-driven only (backup/restore).
     if (forceConsent || forceRefresh) {
-      // If not interactive, we cannot ask for consent/account chooser.
       if (!interactive) return _google.currentUser;
 
       await _runExclusiveInteractive<void>(() async {
         try {
           if (forceConsent) {
-            // disconnect revokes previous grants (best effort)
             await _google.disconnect();
           } else {
             await _google.signOut();
@@ -204,24 +233,46 @@ class AuthService {
       });
     }
 
-    final existing = googleUserNotifier.value ?? _google.currentUser;
+    final existing =
+        googleUserNotifier.value ?? _google.currentUser;
     if (existing != null) {
       googleUserNotifier.value = existing;
       googleDriveUserNotifier.value = existing;
       return existing;
     }
 
+    // ✅ FIX: interactive=false হলে
+    // signInSilently() call করবো না
+    // কারণ এটা account picker UI দেখাতে পারে
+    // শুধু currentUser চেক করবো
+    if (!interactive) {
+      final current = _google.currentUser;
+      if (current != null) {
+        googleUserNotifier.value = current;
+        googleDriveUserNotifier.value = current;
+      }
+      return current;
+    }
+
+    // ✅ interactive=true হলেই নিচের code চলবে
+    // মানে user নিজে Sign-in button চেপেছে
+
     if (_googleEnsureCompleter != null) {
       return _googleEnsureCompleter!.future;
     }
 
-    final completer = Completer<GoogleSignInAccount?>();
+    final completer =
+    Completer<GoogleSignInAccount?>();
     _googleEnsureCompleter = completer;
 
     try {
-      // Silent first (no UI)
+      // ✅ FIX: Silent sign-in শুধু interactive mode এ
+      // suppressErrors: true — account picker দেখাবে না
+      // শুধু already signed-in থাকলে silent return করবে
       try {
-        final silent = await _google.signInSilently();
+        final silent = await _google.signInSilently(
+          suppressErrors: true,
+        );
         if (silent != null) {
           googleUserNotifier.value = silent;
           googleDriveUserNotifier.value = silent;
@@ -229,15 +280,14 @@ class AuthService {
           return silent;
         }
       } catch (e) {
-        debugPrint('Auth: Google silent sign-in failed: $e');
+        debugPrint(
+            'Auth: Google silent sign-in failed: $e');
       }
 
-      if (!interactive) {
-        completer.complete(null);
-        return null;
-      }
-
-      final acct = await _runExclusiveInteractive<GoogleSignInAccount?>(() async {
+      // ✅ User explicitly sign-in চাইছে
+      // তাই account picker দেখানো ঠিক আছে
+      final acct = await _runExclusiveInteractive<
+          GoogleSignInAccount?>(() async {
         return _google.signIn();
       });
 
@@ -251,7 +301,9 @@ class AuthService {
       completer.complete(acct);
       return acct;
     } on PlatformException catch (e) {
-      final ex = AuthServiceException(_handlePlatformError(e), cause: e);
+      final ex = AuthServiceException(
+          _handlePlatformError(e),
+          cause: e);
       completer.completeError(ex);
       throw ex;
     } catch (e) {
@@ -263,15 +315,19 @@ class AuthService {
     }
   }
 
-  Future<User> _signInFirebaseWithGoogleAccount(GoogleSignInAccount acct) async {
+  Future<User> _signInFirebaseWithGoogleAccount(
+      GoogleSignInAccount acct) async {
     try {
-      final auth = await _getGoogleAuthWithRetry(acct);
+      final auth =
+      await _getGoogleAuthWithRetry(acct);
 
       final idToken = auth.idToken;
       final accessToken = auth.accessToken;
 
-      final hasIdToken = (idToken?.trim().isNotEmpty ?? false);
-      final hasAccessToken = (accessToken?.trim().isNotEmpty ?? false);
+      final hasIdToken =
+      (idToken?.trim().isNotEmpty ?? false);
+      final hasAccessToken =
+      (accessToken?.trim().isNotEmpty ?? false);
 
       if (!hasIdToken && !hasAccessToken) {
         throw AuthServiceException(
@@ -281,35 +337,45 @@ class AuthService {
         );
       }
 
-      final credential = GoogleAuthProvider.credential(
+      final credential =
+      GoogleAuthProvider.credential(
         idToken: hasIdToken ? idToken : null,
-        accessToken: hasAccessToken ? accessToken : null,
+        accessToken:
+        hasAccessToken ? accessToken : null,
       );
 
-      final result = await _auth.signInWithCredential(credential);
+      final result =
+      await _auth.signInWithCredential(credential);
       final user = result.user;
 
       if (user == null) {
-        throw const AuthServiceException('Sign-in failed. Please try again.');
+        throw const AuthServiceException(
+            'Sign-in failed. Please try again.');
       }
 
+      // ✅ FIX: Token refresh — silent, no UI
       try {
-        await user.getIdToken(true);
+        await user.getIdToken(false);
       } catch (_) {}
 
       firebaseUserNotifier.value = user;
       return user;
     } on FirebaseAuthException catch (e) {
-      throw AuthServiceException(_handleFirebaseAuthError(e), cause: e);
+      throw AuthServiceException(
+          _handleFirebaseAuthError(e),
+          cause: e);
     } on PlatformException catch (e) {
-      throw AuthServiceException(_handlePlatformError(e), cause: e);
+      throw AuthServiceException(
+          _handlePlatformError(e),
+          cause: e);
     } catch (e) {
       throw _mapError(e);
     }
   }
 
   Future<void> signInForDrive() async {
-    final acct = await ensureGoogleSignedInOnDemand(interactive: true);
+    final acct = await ensureGoogleSignedInOnDemand(
+        interactive: true);
     if (acct == null) {
       throw AuthServiceException(
         kReleaseMode
@@ -324,25 +390,26 @@ class AuthService {
     );
   }
 
-  Future<GoogleSignInAccount?> ensureDriveSignedInOnDemand({
+  Future<GoogleSignInAccount?>
+  ensureDriveSignedInOnDemand({
     required bool interactive,
   }) async {
-    return ensureGoogleSignedInOnDemand(interactive: interactive);
+    return ensureGoogleSignedInOnDemand(
+        interactive: interactive);
   }
 
   Future<void> _ensureDriveScopeGrantedOnDemand({
     required bool interactive,
     required bool forceConsent,
   }) async {
-    final ok = await _runExclusiveInteractive<bool>(() async {
-      return _google.requestScopes(<String>[_driveAppDataScope]);
+    final ok =
+    await _runExclusiveInteractive<bool>(() async {
+      return _google
+          .requestScopes(<String>[_driveAppDataScope]);
     });
 
     if (ok) return;
 
-    // If permission was denied, we can optionally "repair" by disconnecting the
-    // Google session and asking again. This is still user-driven because this
-    // method is only called from backup/restore actions.
     if (forceConsent && interactive) {
       await _runExclusiveInteractive<void>(() async {
         try {
@@ -353,7 +420,8 @@ class AuthService {
         googleDriveUserNotifier.value = null;
       });
 
-      final acct = await ensureGoogleSignedInOnDemand(
+      final acct =
+      await ensureGoogleSignedInOnDemand(
         interactive: true,
         forceConsent: false,
         forceRefresh: true,
@@ -365,9 +433,12 @@ class AuthService {
         );
       }
 
-      final ok2 = await _runExclusiveInteractive<bool>(() async {
-        return _google.requestScopes(<String>[_driveAppDataScope]);
-      });
+      final ok2 =
+      await _runExclusiveInteractive<bool>(
+              () async {
+            return _google.requestScopes(
+                <String>[_driveAppDataScope]);
+          });
 
       if (ok2) return;
     }
@@ -380,20 +451,11 @@ class AuthService {
     );
   }
 
-  /// Returns an authenticated HTTP client for Google Drive appDataFolder operations.
-  ///
-  /// Params:
-  /// - interactive: if false, we do not show UI; if not already signed in, returns error.
-  /// - forceConsent: best-effort revoke + re-consent (use after a 403 insufficientPermissions).
-  /// - forceRefresh: best-effort new token/session (use after a 401).
-  ///
-  /// POLICY: this should only be called from a user action (backup/restore button).
   Future<http.BaseClient> getAuthenticatedClient({
     bool interactive = true,
     bool forceConsent = false,
     bool forceRefresh = false,
   }) async {
-    // Force refresh/consent only when caller requests (e.g., after a failure).
     final acct = await ensureGoogleSignedInOnDemand(
       interactive: interactive,
       forceConsent: forceConsent,
@@ -415,14 +477,16 @@ class AuthService {
       try {
         return await acct.authHeaders;
       } catch (e) {
-        debugPrint('Auth: authHeaders failed, retrying with re-auth. Error: $e');
+        debugPrint(
+            'Auth: authHeaders failed, retrying. Error: $e');
 
-        // Best-effort repair: sign out Google, then sign in again.
         await _safeGoogleSignOut();
         googleUserNotifier.value = null;
         googleDriveUserNotifier.value = null;
 
-        final retry = await ensureGoogleSignedInOnDemand(interactive: true);
+        final retry =
+        await ensureGoogleSignedInOnDemand(
+            interactive: true);
         if (retry == null) {
           throw const AuthServiceException(
             'Sign-in is required for cloud backup. Please sign in first.',
@@ -451,8 +515,6 @@ class AuthService {
       await _auth.signOut();
     } catch (_) {}
 
-    // NOTE: This also signs out Google because this app currently uses a single
-    // GoogleSignIn session for both FirebaseAuth and Drive backup.
     await _safeGoogleSignOut();
 
     firebaseUserNotifier.value = null;
@@ -500,7 +562,8 @@ class AuthService {
     } catch (_) {}
   }
 
-  Future<GoogleSignInAuthentication> _getGoogleAuthWithRetry(
+  Future<GoogleSignInAuthentication>
+  _getGoogleAuthWithRetry(
       GoogleSignInAccount account,
       ) async {
     const int maxRetries = 3;
@@ -510,15 +573,20 @@ class AuthService {
       try {
         final auth = await account.authentication;
 
-        final hasAnyToken = (auth.idToken?.trim().isNotEmpty ?? false) ||
-            (auth.accessToken?.trim().isNotEmpty ?? false);
+        final hasAnyToken =
+            (auth.idToken?.trim().isNotEmpty ??
+                false) ||
+                (auth.accessToken?.trim().isNotEmpty ??
+                    false);
 
         if (hasAnyToken) return auth;
 
-        await Future.delayed(Duration(milliseconds: 250 * (i + 1)));
+        await Future.delayed(
+            Duration(milliseconds: 250 * (i + 1)));
       } catch (e) {
         lastError = e;
-        await Future.delayed(Duration(milliseconds: 250 * (i + 1)));
+        await Future.delayed(
+            Duration(milliseconds: 250 * (i + 1)));
       }
     }
 
@@ -536,9 +604,11 @@ class AuthService {
         'Please try again later or install the latest update when available.';
   }
 
-  bool _looksLikeDeveloperConfigError(String rawLower) {
+  bool _looksLikeDeveloperConfigError(
+      String rawLower) {
     return rawLower.contains('apiexception: 10') ||
-        rawLower.contains('developer configuration error') ||
+        rawLower.contains(
+            'developer configuration error') ||
         rawLower.contains('developer_error') ||
         rawLower.contains('statuscode=10') ||
         rawLower.contains('12500');
@@ -548,19 +618,23 @@ class AuthService {
     final code = e.code.toLowerCase().trim();
     final raw = e.toString().toLowerCase();
 
-    if (code == 'sign_in_canceled' || code == 'sign_in_cancelled') {
+    if (code == 'sign_in_canceled' ||
+        code == 'sign_in_cancelled') {
       return kReleaseMode
           ? 'Sign-in was not completed. You can continue without signing in.'
           : 'Sign-in was cancelled.';
     }
 
-    if (code == 'network_error' || raw.contains('network')) {
+    if (code == 'network_error' ||
+        raw.contains('network')) {
       return 'No internet connection. Please try again.';
     }
 
     if (code == 'sign_in_failed') {
       if (_looksLikeDeveloperConfigError(raw)) {
-        if (kReleaseMode) return _releaseFriendlyUnavailableMessage();
+        if (kReleaseMode) {
+          return _releaseFriendlyUnavailableMessage();
+        }
 
         return 'Google Sign-In configuration error.\n\n'
             'This usually indicates:\n'
@@ -581,7 +655,8 @@ class AuthService {
         : 'Google error: ${e.message ?? 'Unknown error'}';
   }
 
-  String _handleFirebaseAuthError(FirebaseAuthException e) {
+  String _handleFirebaseAuthError(
+      FirebaseAuthException e) {
     switch (e.code) {
       case 'invalid-credential':
       case 'invalid-idp-response':
@@ -613,11 +688,15 @@ class AuthService {
     if (e is AuthServiceException) return e;
 
     if (e is PlatformException) {
-      return AuthServiceException(_handlePlatformError(e), cause: e);
+      return AuthServiceException(
+          _handlePlatformError(e),
+          cause: e);
     }
 
     if (e is FirebaseAuthException) {
-      return AuthServiceException(_handleFirebaseAuthError(e), cause: e);
+      return AuthServiceException(
+          _handleFirebaseAuthError(e),
+          cause: e);
     }
 
     final raw = e.toString();
@@ -642,7 +721,9 @@ class AuthService {
       );
     }
 
-    return AuthServiceException('Login failed. Please try again.', cause: e);
+    return AuthServiceException(
+        'Login failed. Please try again.',
+        cause: e);
   }
 
   Future<void> dispose() async {

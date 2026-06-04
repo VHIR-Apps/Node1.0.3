@@ -213,7 +213,8 @@ class BackupService {
   static Future<CloudRestoreResult> restoreFromGoogleDriveSilently() async {
     try {
       final driveService = GoogleDriveService();
-      final result = await driveService.restoreFromCloudMergeOnDemand();
+      // 🚀 FIX: Updated to the correct method name used in google_drive_service.dart
+      final result = await driveService.restoreAllDataFromCloudOnDemand();
 
       if (result.habitsImported > 0) {
         try {

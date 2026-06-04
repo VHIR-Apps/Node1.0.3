@@ -24,8 +24,11 @@ class TtsService {
   static const double _defaultSpeechRate = 0.45;
   static const double _defaultVolume = 0.90;
   static const double _defaultPitch = 1.0;
-  static const double _alarmSpeechRate = 0.42;
-  static const double _alarmVolume = 1.0;
+
+  // 🚀 ALARM SPECIFIC SETTINGS (১০০% ভলিউম এবং ক্লিয়ার সাউন্ডের জন্য)
+  static const double _alarmSpeechRate = 0.40; // একটু স্লো যাতে কথাগুলো স্পষ্ট বোঝা যায়
+  static const double _alarmVolume = 1.0; // ১০০% ফুল ভলিউম
+  static const double _alarmPitch = 1.15; // তীক্ষ্ণ সাউন্ড, যাতে ব্যাকগ্রাউন্ড সাউন্ড ভেদ করে ক্লিয়ার শোনা যায়
 
   // ─────────────────────────────────────────────
   // INIT
@@ -60,6 +63,20 @@ class TtsService {
       await _tts.setVolume(_defaultVolume);
       await _tts.setPitch(_defaultPitch);
       await _tts.setQueueMode(0);
+
+      // 🚀 iOS-এর জন্য স্পেশাল অডিও ক্যাটাগরি, যাতে রিংটোনের মতো সরাসরি স্পিকারে বাজে
+      if (ThemeMode.system == ThemeMode.dark || ThemeMode.system == ThemeMode.light) {
+        try {
+          await _tts.setIosAudioCategory(
+            IosTextToSpeechAudioCategory.playback,
+            [
+              IosTextToSpeechAudioCategoryOptions.defaultToSpeaker,
+              IosTextToSpeechAudioCategoryOptions.mixWithOthers,
+            ],
+            IosTextToSpeechAudioMode.spokenAudio,
+          );
+        } catch (_) {}
+      }
 
       _tts.setCompletionHandler(() {
         debugPrint('🔊 TTS completed');
@@ -129,13 +146,12 @@ class TtsService {
   }
 
   // ─────────────────────────────────────────────
-  // SPEAK ALARM FORCED
+  // SPEAK ALARM FORCED (🚀 ULTRA CLEAR & LOUD)
   // ─────────────────────────────────────────────
   //
   // ✅ ALWAYS speaks — bypasses ALL settings
   // ✅ Used by AlarmService for alarm TTS
-  // ✅ Max volume, slower rate for clarity
-  // ✅ No DatabaseService.isTtsEnabled() check
+  // ✅ Max volume, slower rate, and sharp pitch for clarity
 
   static Future<void> speakAlarmForced(String text) async {
     final trimmed = text.trim();
@@ -156,22 +172,22 @@ class TtsService {
       await _tts.stop();
       await Future.delayed(const Duration(milliseconds: 150));
 
-      // Max volume for alarm
+      // 🚀 Max volume and extra clarity parameters exclusively for Alarms
       await _tts.setSpeechRate(_alarmSpeechRate);
       await _tts.setVolume(_alarmVolume);
-      await _tts.setPitch(_defaultPitch);
+      await _tts.setPitch(_alarmPitch);
 
       final result = await _tts.speak(trimmed);
 
       if (result == 1) {
-        debugPrint('🔊 Alarm TTS forced: "$trimmed"');
+        debugPrint('🔊 Alarm TTS forced (Clear & Loud): "$trimmed"');
       } else {
         debugPrint('⚠️ Alarm TTS result: $result for "$trimmed"');
       }
     } catch (e) {
       debugPrint('❌ speakAlarmForced error: $e');
     } finally {
-      // Restore defaults
+      // Restore normal defaults so other app features aren't affected
       Future.delayed(const Duration(milliseconds: 200), () async {
         try {
           await _tts.setSpeechRate(_defaultSpeechRate);
@@ -185,9 +201,6 @@ class TtsService {
   // ─────────────────────────────────────────────
   // SPEAK ALARM — Respects settings
   // ─────────────────────────────────────────────
-  //
-  // This version checks DatabaseService.isTtsEnabled().
-  // Use speakAlarmForced() for alarm TTS instead.
 
   static Future<void> speakAlarm(
       String description, {

@@ -1,3 +1,5 @@
+// lib/screens/statistics_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -17,7 +19,6 @@ class _StatisticsScreenState extends State<StatisticsScreen>
     with SingleTickerProviderStateMixin {
   List<Habit> _habits = [];
   String _selectedView = 'week';
-  String _selectedBreakdownView = 'completion';
   late TabController _tabController;
 
   @override
@@ -39,6 +40,45 @@ class _StatisticsScreenState extends State<StatisticsScreen>
     });
   }
 
+  // ═══════════════════════════════════════
+  // ROADBLOCK ANALYSIS LOGIC (NEW & ADVANCED)
+  // ═══════════════════════════════════════
+  Map<String, int> _getAggregateMissedReasons() {
+    final countMap = <String, int>{};
+    for (final habit in _habits) {
+      try {
+        // গত ৩০ দিনের মিস হওয়ার কারণগুলো নিচ্ছি
+        final reasons = habit.getRecentMissedReasons(30);
+        for (final r in reasons) {
+          final parts = r.split(':');
+          if (parts.length > 1) {
+            final reason = parts.skip(1).join(':').trim();
+            countMap[reason] = (countMap[reason] ?? 0) + 1;
+          }
+        }
+      } catch (e) {
+        debugPrint('Error parsing missed reasons: $e');
+      }
+    }
+    return countMap;
+  }
+
+  String _getAIAdvice(String topReason) {
+    final r = topReason.toLowerCase();
+    if (r.contains('busy') || r.contains('time') || r.contains('work') || r.contains('meeting')) {
+      return "Time management is your biggest hurdle. Try the '2-Minute Rule' — scale your habit down so it only takes 2 minutes on busy days. Just show up!";
+    } else if (r.contains('forgot') || r.contains('remember')) {
+      return "Memory seems to be the issue. Set a louder alarm or use 'Habit Stacking' (do this habit immediately after something you already do daily like brushing teeth).";
+    } else if (r.contains('sick') || r.contains('tired') || r.contains('health') || r.contains('sleep')) {
+      return "Health first! It's absolutely okay to rest. When you recover, start with 50% effort to slowly regain your momentum without burning out.";
+    } else if (r.contains('lazy') || r.contains('motivation') || r.contains('mood') || r.contains('feel')) {
+      return "Motivation follows action, not the other way around. Don't wait for the 'mood' — use the 5-Second Rule and just force yourself to start!";
+    } else if (r.contains('distracted') || r.contains('phone')) {
+      return "Distractions are stealing your focus. Try putting your phone in another room or turning on 'Do Not Disturb' before starting your habit.";
+    }
+    return "Awareness is the first step to improvement. Now that you know '$topReason' is holding you back, create a solid backup plan for tomorrow!";
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -51,6 +91,10 @@ class _StatisticsScreenState extends State<StatisticsScreen>
           _buildSliverAppBar(isDark),
           SliverToBoxAdapter(child: _buildScoreCard(isDark)),
           SliverToBoxAdapter(child: _buildOverviewCards(isDark)),
+
+          // 🚀 NEW: AI Coach & Roadblock Analysis
+          SliverToBoxAdapter(child: _buildObstaclesAnalysis(isDark)),
+
           SliverToBoxAdapter(child: _buildInsightsCard(isDark)),
           SliverToBoxAdapter(child: _buildViewSelector(isDark)),
           SliverToBoxAdapter(child: _buildChart(isDark)),
@@ -95,6 +139,179 @@ class _StatisticsScreenState extends State<StatisticsScreen>
               end: Alignment.bottomCenter,
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  // ═══════════════════════════════════════
+  // ROADBLOCK & FAILURE ANALYSIS CARD (🚀 NEW)
+  // ═══════════════════════════════════════
+  Widget _buildObstaclesAnalysis(bool isDark) {
+    final reasonsMap = _getAggregateMissedReasons();
+    if (reasonsMap.isEmpty) return const SizedBox.shrink(); // কোনো মিস করার রিজন না থাকলে হাইড থাকবে
+
+    final sorted = reasonsMap.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+    final totalMissed = sorted.fold<int>(0, (sum, item) => sum + item.value);
+    final topReason = sorted.first.key;
+    final topReasonCount = sorted.first.value;
+    final topReasonPercent = (topReasonCount / totalMissed) * 100;
+
+    final advice = _getAIAdvice(topReason);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: isDark
+                ? [const Color(0xFF2A1015), const Color(0xFF1C0D12)]
+                : [const Color(0xFFFFF0F2), const Color(0xFFFFF5F7)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: Colors.redAccent.withAlpha(40), width: 1.5),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.redAccent.withAlpha(isDark ? 20 : 10),
+              blurRadius: 20,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent.withAlpha(isDark ? 40 : 25),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  'Roadblock Analysis',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: isDark ? Colors.white : Colors.black87,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Why you missed habits in the last 30 days:',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: isDark ? Colors.white60 : Colors.black54,
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Progress Bars for Reasons
+            ...sorted.take(4).map((entry) {
+              final percent = (entry.value / totalMissed) * 100;
+              final isTop = entry.key == topReason;
+              final color = isTop ? Colors.redAccent : (isDark ? Colors.white54 : Colors.grey.shade600);
+
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: 4,
+                      child: Text(
+                        entry.key,
+                        style: TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: isTop ? FontWeight.w800 : FontWeight.w600,
+                          color: isTop ? (isDark ? Colors.white : Colors.black87) : (isDark ? Colors.white70 : Colors.black87),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 5,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: LinearProgressIndicator(
+                          value: percent / 100,
+                          minHeight: 8,
+                          backgroundColor: color.withAlpha(20),
+                          valueColor: AlwaysStoppedAnimation<Color>(color),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      '${entry.value}x',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                        color: color,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+
+            const SizedBox(height: 16),
+            Divider(color: Colors.redAccent.withAlpha(30)),
+            const SizedBox(height: 16),
+
+            // 🧠 AI Coach Feedback Box
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: isDark ? Colors.black.withAlpha(40) : Colors.white.withAlpha(180),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppConfig.primaryColor.withAlpha(30)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('🧠', style: TextStyle(fontSize: 24)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'AI Coach Advice',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w900,
+                            color: AppConfig.primaryColor,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          advice,
+                          style: TextStyle(
+                            fontSize: 13,
+                            height: 1.4,
+                            fontWeight: FontWeight.w600,
+                            color: isDark ? Colors.white70 : Colors.black87,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -334,10 +551,10 @@ class _StatisticsScreenState extends State<StatisticsScreen>
           children: [
             Row(
               children: [
-                const Text('💡', style: TextStyle(fontSize: 20)),
+                const Text('✨', style: TextStyle(fontSize: 20)),
                 const SizedBox(width: 8),
                 Text(
-                  'Insights',
+                  'Quick Insights',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w900,

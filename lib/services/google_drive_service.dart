@@ -10,11 +10,14 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/app_config.dart';
+import '../models/daily_study_routine_model.dart';
 import '../models/habit_model.dart';
+import '../models/leaderboard_profile_model.dart';
 import '../models/note_model.dart';
 import '../models/notification_model.dart';
 import '../models/study_routine_model.dart';
 import '../models/study_session_model.dart';
+import '../models/study_target_model.dart';
 import 'auth_service.dart';
 import 'database_service.dart';
 import 'notes_service.dart';
@@ -45,6 +48,9 @@ class CloudBackupResult {
   final int studySessions;
   final int studyRoutines;
   final int settingsKeys;
+  final int leaderboardProfiles;
+  final int studyTargets;
+  final int dailyStudyRoutines;
 
   const CloudBackupResult({
     required this.createdAt,
@@ -54,6 +60,9 @@ class CloudBackupResult {
     required this.studySessions,
     required this.studyRoutines,
     required this.settingsKeys,
+    this.leaderboardProfiles = 0,
+    this.studyTargets = 0,
+    this.dailyStudyRoutines = 0,
   });
 }
 
@@ -70,6 +79,12 @@ class CloudRestoreResult {
   final int studyRoutinesSkipped;
   final int settingsAdded;
   final int settingsSkipped;
+  final int leaderboardProfilesImported;
+  final int leaderboardProfilesSkipped;
+  final int studyTargetsImported;
+  final int studyTargetsSkipped;
+  final int dailyStudyRoutinesImported;
+  final int dailyStudyRoutinesSkipped;
 
   const CloudRestoreResult({
     this.habitsImported = 0,
@@ -84,6 +99,12 @@ class CloudRestoreResult {
     this.studyRoutinesSkipped = 0,
     this.settingsAdded = 0,
     this.settingsSkipped = 0,
+    this.leaderboardProfilesImported = 0,
+    this.leaderboardProfilesSkipped = 0,
+    this.studyTargetsImported = 0,
+    this.studyTargetsSkipped = 0,
+    this.dailyStudyRoutinesImported = 0,
+    this.dailyStudyRoutinesSkipped = 0,
   });
 }
 
@@ -105,20 +126,17 @@ class GoogleDriveService {
   GoogleDriveService();
 
   static const String _backupFileName = 'habitnode_cloud_backup.json';
-  static const int _schemaVersion = 1;
+  static const int _schemaVersion = 2;
 
-  // Local keys (Hive settings) to show status without Drive check
   static const String _kLastCloudBackupAt = 'cloud_backup_last_at';
   static const String _kLastCloudRestoreAt = 'cloud_restore_last_at';
 
   final AuthService _authService = AuthService.instance;
 
-  // ─────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════
   // PUBLIC API
-  // ─────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════
 
-  /// Performs a full backup of all app data to the Google Drive `appDataFolder`.
-  /// This is a user-driven action and will trigger sign-in/permission prompts if needed.
   Future<CloudBackupResult> backupAllDataToCloudOnDemand() async {
     return _withDriveApi<CloudBackupResult>((api) async {
       final payload = await _buildBackupPayload();
@@ -136,25 +154,27 @@ class GoogleDriveService {
 
       return CloudBackupResult(
         createdAt: createdAt,
-        habits: (counts['habits'] as num?)?.toInt() ?? 0,
-        notes: (counts['notes'] as num?)?.toInt() ?? 0,
-        notifications: (counts['notifications'] as num?)?.toInt() ?? 0,
-        studySessions: (counts['study_sessions'] as num?)?.toInt() ?? 0,
-        studyRoutines: (counts['study_routines'] as num?)?.toInt() ?? 0,
-        settingsKeys: (counts['settingsKeys'] as num?)?.toInt() ?? 0,
+        habits: _asInt(counts['habits']),
+        notes: _asInt(counts['notes']),
+        notifications: _asInt(counts['notifications']),
+        studySessions: _asInt(counts['study_sessions']),
+        studyRoutines: _asInt(counts['study_routines']),
+        settingsKeys: _asInt(counts['settingsKeys']),
+        leaderboardProfiles: _asInt(counts['leaderboard_profiles']),
+        studyTargets: _asInt(counts['study_targets']),
+        dailyStudyRoutines: _asInt(counts['daily_study_routines']),
       );
     });
   }
 
-  /// Downloads the latest backup file and merges its data with the local database.
-  /// Skips items that already exist to prevent duplicates.
-  Future<CloudRestoreResult> restoreFromCloudMergeOnDemand() async {
+  Future<CloudRestoreResult> restoreAllDataFromCloudOnDemand() async {
     return _withDriveApi<CloudRestoreResult>((api) async {
       final Map<String, dynamic> decoded = await _downloadAndDecodeBackup(api);
 
-      final schema = (decoded['schemaVersion'] as num?)?.toInt() ?? 0;
-      if (schema != _schemaVersion) {
-        throw CloudBackupException('Unsupported backup schema version: $schema');
+      final schema = _asInt(decoded['schemaVersion']);
+      if (schema < 1 || schema > _schemaVersion) {
+        throw CloudBackupException(
+            'Unsupported backup schema version: $schema');
       }
 
       final data = decoded['data'];
@@ -162,13 +182,27 @@ class GoogleDriveService {
         throw const CloudBackupException('Backup payload missing data.');
       }
 
-      // Restore each data type
       final habitResult = await _restoreHabits(data['habits']);
       final noteResult = await _restoreNotes(data['notes']);
       final notifResult = await _restoreNotifications(data['notifications']);
-      final sessionResult = await _restoreStudySessions(data['study_sessions']);
-      final routineResult = await _restoreStudyRoutines(data['study_routines']);
+      final sessionResult =
+      await _restoreStudySessions(data['study_sessions']);
+      final routineResult =
+      await _restoreStudyRoutines(data['study_routines']);
       final settingsResult = await _restoreSettings(data['settings']);
+
+      Map<String, int> leaderboardResult = {'imported': 0, 'skipped': 0};
+      Map<String, int> studyTargetResult = {'imported': 0, 'skipped': 0};
+      Map<String, int> dailyRoutineResult = {'imported': 0, 'skipped': 0};
+
+      if (schema >= 2) {
+        leaderboardResult =
+        await _restoreLeaderboardProfiles(data['leaderboard_profiles']);
+        studyTargetResult =
+        await _restoreStudyTargets(data['study_targets']);
+        dailyRoutineResult =
+        await _restoreDailyStudyRoutines(data['daily_study_routines']);
+      }
 
       await _setLastRestoreTimeLocal(DateTime.now().toUtc());
 
@@ -185,11 +219,16 @@ class GoogleDriveService {
         studyRoutinesSkipped: routineResult['skipped'] ?? 0,
         settingsAdded: settingsResult['imported'] ?? 0,
         settingsSkipped: settingsResult['skipped'] ?? 0,
+        leaderboardProfilesImported: leaderboardResult['imported'] ?? 0,
+        leaderboardProfilesSkipped: leaderboardResult['skipped'] ?? 0,
+        studyTargetsImported: studyTargetResult['imported'] ?? 0,
+        studyTargetsSkipped: studyTargetResult['skipped'] ?? 0,
+        dailyStudyRoutinesImported: dailyRoutineResult['imported'] ?? 0,
+        dailyStudyRoutinesSkipped: dailyRoutineResult['skipped'] ?? 0,
       );
     });
   }
 
-  /// Checks for an existing backup file in the `appDataFolder` without downloading it.
   Future<CloudBackupInfo?> getExistingBackupInfoOnDemand() async {
     return _withDriveApi<CloudBackupInfo?>((api) async {
       final file = await _findBackupFileMeta(api);
@@ -211,16 +250,15 @@ class GoogleDriveService {
     });
   }
 
-  /// Checks if the Drive API is accessible with the current credentials.
   Future<void> verifyDriveAccessOnDemand() async {
     await _withDriveApi<void>((api) async {
       await api.about.get($fields: 'user(emailAddress)');
     });
   }
 
-  // ─────────────────────────────────────────────
-  // LOCAL CACHE FOR UI
-  // ─────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════
+  // LOCAL CACHE
+  // ═══════════════════════════════════════════════════════════
 
   DateTime? getLastBackupTimeLocal() {
     try {
@@ -254,9 +292,9 @@ class GoogleDriveService {
     } catch (_) {}
   }
 
-  // ─────────────────────────────────────────────
-  // PRIVATE: CORE DRIVE OPERATIONS
-  // ─────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════
+  // CORE DRIVE OPERATIONS
+  // ═══════════════════════════════════════════════════════════
 
   Future<drive.File?> _findBackupFileMeta(drive.DriveApi api) async {
     final result = await api.files.list(
@@ -265,7 +303,10 @@ class GoogleDriveService {
       pageSize: 1,
       $fields: 'files(id,name,modifiedTime,size)',
     );
-    return result.files?.firstOrNull;
+
+    final files = result.files;
+    if (files == null || files.isEmpty) return null;
+    return files.first;
   }
 
   Future<void> _uploadBytesToDrive(drive.DriveApi api, List<int> bytes) async {
@@ -277,17 +318,14 @@ class GoogleDriveService {
       contentType: 'application/json',
     );
 
-    // FIXED BUG: Google Drive API throws an error if you pass `parents` when updating an existing file.
-    // So we separate the metadata for Create and Update.
     if (existingFile?.id != null) {
-      // Update existing file (NO parents field)
       final updateMetadata = drive.File()
         ..name = _backupFileName
         ..mimeType = 'application/json';
 
-      await api.files.update(updateMetadata, existingFile!.id!, uploadMedia: media);
+      await api.files
+          .update(updateMetadata, existingFile!.id!, uploadMedia: media);
     } else {
-      // Create new file (MUST include parents field)
       final createMetadata = drive.File()
         ..name = _backupFileName
         ..mimeType = 'application/json'
@@ -328,12 +366,13 @@ class GoogleDriveService {
     return decoded;
   }
 
-  // ─────────────────────────────────────────────
-  // PRIVATE: PAYLOAD BUILDERS (BACKUP)
-  // ─────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════
+  // BACKUP PAYLOAD BUILDERS
+  // ═══════════════════════════════════════════════════════════
 
   Future<Map<String, dynamic>> _buildBackupPayload() async {
     final now = DateTime.now().toUtc();
+
     final data = <String, dynamic>{
       'habits': _getHabitsForBackup(),
       'notes': _getNotesForBackup(),
@@ -341,6 +380,9 @@ class GoogleDriveService {
       'study_sessions': _getStudySessionsForBackup(),
       'study_routines': _getStudyRoutinesForBackup(),
       'settings': _getSettingsForBackup(),
+      'leaderboard_profiles': _getLeaderboardProfilesForBackup(),
+      'study_targets': _getStudyTargetsForBackup(),
+      'daily_study_routines': _getDailyStudyRoutinesForBackup(),
     };
 
     return <String, dynamic>{
@@ -357,6 +399,9 @@ class GoogleDriveService {
         'study_sessions': (data['study_sessions'] as List).length,
         'study_routines': (data['study_routines'] as List).length,
         'settingsKeys': (data['settings'] as Map).length,
+        'leaderboard_profiles': (data['leaderboard_profiles'] as List).length,
+        'study_targets': (data['study_targets'] as List).length,
+        'daily_study_routines': (data['daily_study_routines'] as List).length,
       },
     };
   }
@@ -439,29 +484,113 @@ class GoogleDriveService {
     return safeSettings;
   }
 
-  // ─────────────────────────────────────────────
-  // PRIVATE: DATA MERGERS (RESTORE)
-  // ─────────────────────────────────────────────
+  List<Map<String, dynamic>> _getLeaderboardProfilesForBackup() {
+    try {
+      if (!DatabaseService.isLeaderboardAvailable) return [];
+
+      final box = Hive.box<LeaderboardProfileModel>(
+          DatabaseService.leaderboardProfileBox);
+      return box.values.map((p) {
+        return {
+          'uid': p.uid,
+          'displayName': p.displayName,
+          'tagline': p.tagline,
+          'bio': p.bio,
+          'countryCode': p.countryCode,
+          'createdAt': p.createdAt.toIso8601String(),
+          'updatedAt': p.updatedAt.toIso8601String(),
+          'isOptedIn': p.isOptedIn,
+          'showLevel': p.showLevel,
+          'showBadges': p.showBadges,
+          'showStudyHours': p.showStudyHours,
+          'avatarEmoji': p.avatarEmoji,
+          'avatarIndex': p.avatarIndex,
+          'joinedAtMs': p.joinedAtMs,
+          'isInterviewUser': p.isInterviewUser,
+          'profileThemeIndex': p.profileThemeIndex,
+          'lastCloudSyncAt': p.lastCloudSyncAt?.toIso8601String(),
+          'cachedRank': p.cachedRank,
+          'cachedScore': p.cachedScore,
+          'dailyScore': p.dailyScore,
+          'weeklyScore': p.weeklyScore,
+          'lastDailyResetMs': p.lastDailyResetMs,
+          'lastWeeklyResetMs': p.lastWeeklyResetMs,
+          'posts': p.posts,
+          'blockedUsers': p.blockedUsers,
+          'isProUser': p.isProUser,
+          'lastActiveMs': p.lastActiveMs,
+          'unlockedBadges': p.unlockedBadges,
+        };
+      }).toList();
+    } catch (e) {
+      debugPrint('⚠️ Leaderboard backup error: $e');
+      return [];
+    }
+  }
+
+  List<Map<String, dynamic>> _getStudyTargetsForBackup() {
+    try {
+      if (!DatabaseService.isStudyTargetsAvailable) return [];
+
+      final box = Hive.box<StudyTarget>(DatabaseService.studyTargetsBox);
+      return box.values.map((t) {
+        return {
+          'id': t.id,
+          'dailyTargetMinutes': t.dailyTargetMinutes,
+          'weeklyTargetMinutes': t.weeklyTargetMinutes,
+          'subjectTargets': Map<String, int>.from(t.subjectTargets),
+          'isActive': t.isActive,
+          'createdAt': t.createdAt.toIso8601String(),
+          'updatedAt': t.updatedAt.toIso8601String(),
+        };
+      }).toList();
+    } catch (e) {
+      debugPrint('⚠️ StudyTargets backup error: $e');
+      return [];
+    }
+  }
+
+  List<Map<String, dynamic>> _getDailyStudyRoutinesForBackup() {
+    try {
+      if (!DatabaseService.isDailyStudyRoutinesAvailable) return [];
+
+      final box = Hive.box<DailyStudyRoutine>(
+          DatabaseService.dailyStudyRoutinesBox);
+      return box.values.map((r) => r.toJson()).toList();
+    } catch (e) {
+      debugPrint('⚠️ DailyStudyRoutines backup error: $e');
+      return [];
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // RESTORE
+  // ═══════════════════════════════════════════════════════════
 
   Future<Map<String, int>> _restoreHabits(dynamic rawData) async {
     if (rawData is! List) return {'imported': 0, 'skipped': 0};
     int imported = 0, skipped = 0;
+    final box = Hive.box<Habit>(DatabaseService.habitsBox);
     final existingIds = DatabaseService.getAllHabits().map((h) => h.id).toSet();
 
     for (final item in rawData) {
       try {
-        final map = Map<String, dynamic>.from(item as Map);
+        if (item is! Map) {
+          skipped++;
+          continue;
+        }
+        final map = Map<String, dynamic>.from(item);
         final id = map['id'] as String?;
         if (id == null || id.isEmpty || existingIds.contains(id)) {
           skipped++;
           continue;
         }
-        await DatabaseService.addHabit(Habit.fromJson(map));
+        await box.put(id, Habit.fromJson(map));
         existingIds.add(id);
         imported++;
       } catch (e) {
         skipped++;
-        debugPrint('Drive restore: Habit skipped: $e');
+        debugPrint('Restore: Habit skipped: $e');
       }
     }
     return {'imported': imported, 'skipped': skipped};
@@ -474,7 +603,11 @@ class GoogleDriveService {
 
     for (final item in rawData) {
       try {
-        final map = Map<String, dynamic>.from(item as Map);
+        if (item is! Map) {
+          skipped++;
+          continue;
+        }
+        final map = Map<String, dynamic>.from(item);
         final id = map['id'] as String?;
         if (id == null || id.isEmpty || NotesService.getNoteById(id) != null) {
           skipped++;
@@ -484,7 +617,7 @@ class GoogleDriveService {
         imported++;
       } catch (e) {
         skipped++;
-        debugPrint('Drive restore: Note skipped: $e');
+        debugPrint('Restore: Note skipped: $e');
       }
     }
     return {'imported': imported, 'skipped': skipped};
@@ -493,13 +626,18 @@ class GoogleDriveService {
   Future<Map<String, int>> _restoreNotifications(dynamic rawData) async {
     if (rawData is! List) return {'imported': 0, 'skipped': 0};
     int imported = 0, skipped = 0;
-    final notifBox = Hive.box<AppNotification>(DatabaseService.notificationsBox);
+    final notifBox =
+    Hive.box<AppNotification>(DatabaseService.notificationsBox);
     final existingIds =
     DatabaseService.getAllNotifications().map((n) => n.id).toSet();
 
     for (final item in rawData) {
       try {
-        final map = Map<String, dynamic>.from(item as Map);
+        if (item is! Map) {
+          skipped++;
+          continue;
+        }
+        final map = Map<String, dynamic>.from(item);
         final id = map['id'] as String?;
         if (id == null || id.isEmpty || existingIds.contains(id)) {
           skipped++;
@@ -509,7 +647,8 @@ class GoogleDriveService {
           id: id,
           title: (map['title'] as String?) ?? '',
           body: (map['body'] as String?) ?? '',
-          receivedAt: DateTime.tryParse(map['receivedAt'] as String? ?? '') ?? DateTime.now(),
+          receivedAt: DateTime.tryParse(map['receivedAt'] as String? ?? '') ??
+              DateTime.now(),
           isRead: (map['isRead'] as bool?) ?? false,
           type: (map['type'] as String?) ?? 'local',
           payload: map['payload'] as String?,
@@ -519,7 +658,7 @@ class GoogleDriveService {
         imported++;
       } catch (e) {
         skipped++;
-        debugPrint('Drive restore: Notification skipped: $e');
+        debugPrint('Restore: Notification skipped: $e');
       }
     }
     return {'imported': imported, 'skipped': skipped};
@@ -534,7 +673,11 @@ class GoogleDriveService {
 
     for (final item in rawData) {
       try {
-        final map = Map<String, dynamic>.from(item as Map);
+        if (item is! Map) {
+          skipped++;
+          continue;
+        }
+        final map = Map<String, dynamic>.from(item);
         final id = map['id'] as String?;
         if (id == null || id.isEmpty || existingIds.contains(id)) {
           skipped++;
@@ -543,13 +686,17 @@ class GoogleDriveService {
         final s = StudySession(
           id: id,
           subjectName: (map['subjectName'] as String?) ?? 'Other',
-          subjectColorValue: (map['subjectColorValue'] as num?)?.toInt() ?? 0xFF6C63FF,
-          startTime: DateTime.tryParse(map['startTime'] as String? ?? '') ?? DateTime.now(),
-          endTime: map['endTime'] == null ? null : DateTime.tryParse(map['endTime'] as String),
-          durationMinutes: (map['durationMinutes'] as num?)?.toInt() ?? 0,
+          subjectColorValue: _asInt(map['subjectColorValue'], 0xFF6C63FF),
+          startTime: DateTime.tryParse(map['startTime'] as String? ?? '') ??
+              DateTime.now(),
+          endTime: map['endTime'] == null
+              ? null
+              : DateTime.tryParse(map['endTime'] as String),
+          durationMinutes: _asInt(map['durationMinutes']),
           sessionType: (map['sessionType'] as String?) ?? 'focus',
-          completedAt: DateTime.tryParse(map['completedAt'] as String? ?? '') ?? DateTime.now(),
-          pomodoroCount: (map['pomodoroCount'] as num?)?.toInt() ?? 0,
+          completedAt: DateTime.tryParse(map['completedAt'] as String? ?? '') ??
+              DateTime.now(),
+          pomodoroCount: _asInt(map['pomodoroCount']),
           isCompleted: (map['isCompleted'] as bool?) ?? true,
         );
         await box.put(id, s);
@@ -557,7 +704,7 @@ class GoogleDriveService {
         imported++;
       } catch (e) {
         skipped++;
-        debugPrint('Drive restore: StudySession skipped: $e');
+        debugPrint('Restore: StudySession skipped: $e');
       }
     }
     return {'imported': imported, 'skipped': skipped};
@@ -572,7 +719,11 @@ class GoogleDriveService {
 
     for (final item in rawData) {
       try {
-        final map = Map<String, dynamic>.from(item as Map);
+        if (item is! Map) {
+          skipped++;
+          continue;
+        }
+        final map = Map<String, dynamic>.from(item);
         final id = map['id'] as String?;
         if (id == null || id.isEmpty || existingIds.contains(id)) {
           skipped++;
@@ -582,15 +733,17 @@ class GoogleDriveService {
         final sessionsList = <RoutineSession>[];
         if (map['sessions'] is List) {
           for (final sItem in map['sessions']) {
-            final sMap = Map<String, dynamic>.from(sItem as Map);
+            if (sItem is! Map) continue;
+            final sMap = Map<String, dynamic>.from(sItem);
             sessionsList.add(RoutineSession(
               subjectName: (sMap['subjectName'] as String?) ?? 'Other',
-              subjectColorValue: (sMap['subjectColorValue'] as num?)?.toInt() ?? 0xFF6C63FF,
-              durationMinutes: (sMap['durationMinutes'] as num?)?.toInt() ?? 25,
+              subjectColorValue:
+              _asInt(sMap['subjectColorValue'], 0xFF6C63FF),
+              durationMinutes: _asInt(sMap['durationMinutes'], 25),
               includeBreak: (sMap['includeBreak'] as bool?) ?? true,
-              breakDurationMinutes: (sMap['breakDurationMinutes'] as num?)?.toInt() ?? 5,
+              breakDurationMinutes: _asInt(sMap['breakDurationMinutes'], 5),
               customMessage: sMap['customMessage'] as String?,
-              order: (sMap['order'] as num?)?.toInt() ?? 0,
+              order: _asInt(sMap['order']),
               emoji: (sMap['emoji'] as String?) ?? '📖',
             ));
           }
@@ -600,23 +753,155 @@ class GoogleDriveService {
           id: id,
           name: (map['name'] as String?) ?? 'Routine',
           sessions: sessionsList,
-          createdAt: DateTime.tryParse(map['createdAt'] as String? ?? '') ?? DateTime.now(),
+          createdAt: DateTime.tryParse(map['createdAt'] as String? ?? '') ??
+              DateTime.now(),
           isActive: (map['isActive'] as bool?) ?? false,
-          totalDurationMinutes: (map['totalDurationMinutes'] as num?)?.toInt() ?? 0,
+          totalDurationMinutes: _asInt(map['totalDurationMinutes']),
           description: map['description'] as String?,
           autoPlayEnabled: (map['autoPlayEnabled'] as bool?) ?? true,
           ttsEnabled: (map['ttsEnabled'] as bool?) ?? true,
-          timesCompleted: (map['timesCompleted'] as num?)?.toInt() ?? 0,
-          lastPlayedAt: map['lastPlayedAt'] == null ? null : DateTime.tryParse(map['lastPlayedAt'] as String),
+          timesCompleted: _asInt(map['timesCompleted']),
+          lastPlayedAt: map['lastPlayedAt'] == null
+              ? null
+              : DateTime.tryParse(map['lastPlayedAt'] as String),
           emoji: (map['emoji'] as String?) ?? '📚',
-          colorValue: (map['colorValue'] as num?)?.toInt() ?? 0xFF6C63FF,
+          colorValue: _asInt(map['colorValue'], 0xFF6C63FF),
         );
         await box.put(id, routine);
         existingIds.add(id);
         imported++;
       } catch (e) {
         skipped++;
-        debugPrint('Drive restore: StudyRoutine skipped: $e');
+        debugPrint('Restore: StudyRoutine skipped: $e');
+      }
+    }
+    return {'imported': imported, 'skipped': skipped};
+  }
+
+  /// 🚀 Restore leaderboard profiles (CORRECT TYPES)
+  /// cachedScore = double
+  /// dailyScore, weeklyScore = int
+  Future<Map<String, int>> _restoreLeaderboardProfiles(dynamic rawData) async {
+    if (rawData is! List) return {'imported': 0, 'skipped': 0};
+    int imported = 0, skipped = 0;
+
+    for (final item in rawData) {
+      try {
+        if (item is! Map) {
+          skipped++;
+          continue;
+        }
+        final map = Map<String, dynamic>.from(item);
+        final uid = (map['uid'] as String?)?.trim();
+        if (uid == null || uid.isEmpty) {
+          skipped++;
+          continue;
+        }
+
+        final profile = LeaderboardProfileModel(
+          uid: uid,
+          displayName: (map['displayName'] as String?) ?? 'User',
+          tagline: map['tagline'] as String?,
+          bio: map['bio'] as String?,
+          countryCode: map['countryCode'] as String?,
+          createdAt: DateTime.tryParse(map['createdAt'] as String? ?? '') ??
+              DateTime.now(),
+          updatedAt: DateTime.tryParse(map['updatedAt'] as String? ?? '') ??
+              DateTime.now(),
+          isOptedIn: (map['isOptedIn'] as bool?) ?? false,
+          showLevel: (map['showLevel'] as bool?) ?? true,
+          showBadges: (map['showBadges'] as bool?) ?? true,
+          showStudyHours: (map['showStudyHours'] as bool?) ?? true,
+          avatarEmoji: (map['avatarEmoji'] as String?) ?? '🙂',
+          avatarIndex: _asInt(map['avatarIndex']),
+          joinedAtMs: _asInt(map['joinedAtMs']),
+          isInterviewUser: (map['isInterviewUser'] as bool?) ?? false,
+          profileThemeIndex: _asInt(map['profileThemeIndex']),
+          lastCloudSyncAt: map['lastCloudSyncAt'] == null
+              ? null
+              : DateTime.tryParse(map['lastCloudSyncAt'] as String),
+          cachedRank: _asInt(map['cachedRank'], -1),
+
+          // ✅ CORRECT TYPES (per model):
+          cachedScore: _asDouble(map['cachedScore']), // double
+          dailyScore: _asInt(map['dailyScore']),       // int
+          weeklyScore: _asInt(map['weeklyScore']),     // int
+
+          lastDailyResetMs: _asInt(map['lastDailyResetMs']),
+          lastWeeklyResetMs: _asInt(map['lastWeeklyResetMs']),
+          posts: _asPostList(map['posts']),
+          blockedUsers: _asStringList(map['blockedUsers']),
+          isProUser: (map['isProUser'] as bool?) ?? false,
+          lastActiveMs: _asInt(map['lastActiveMs']),
+          unlockedBadges: _asStringList(map['unlockedBadges']),
+        );
+
+        await DatabaseService.saveLeaderboardProfile(profile);
+        imported++;
+      } catch (e) {
+        skipped++;
+        debugPrint('Restore: Leaderboard profile skipped: $e');
+      }
+    }
+    return {'imported': imported, 'skipped': skipped};
+  }
+
+  Future<Map<String, int>> _restoreStudyTargets(dynamic rawData) async {
+    if (rawData is! List) return {'imported': 0, 'skipped': 0};
+    int imported = 0, skipped = 0;
+
+    for (final item in rawData) {
+      try {
+        if (item is! Map) {
+          skipped++;
+          continue;
+        }
+        final map = Map<String, dynamic>.from(item);
+
+        final target = StudyTarget(
+          id: (map['id'] as String?) ?? 'default_study_target',
+          dailyTargetMinutes: _asInt(map['dailyTargetMinutes'], 60),
+          weeklyTargetMinutes: _asInt(map['weeklyTargetMinutes'], 420),
+          subjectTargets: _asStringIntMap(map['subjectTargets']),
+          isActive: (map['isActive'] as bool?) ?? true,
+          createdAt: DateTime.tryParse(map['createdAt'] as String? ?? '') ??
+              DateTime.now(),
+          updatedAt: DateTime.tryParse(map['updatedAt'] as String? ?? '') ??
+              DateTime.now(),
+        );
+
+        await DatabaseService.saveStudyTarget(target);
+        imported++;
+      } catch (e) {
+        skipped++;
+        debugPrint('Restore: StudyTarget skipped: $e');
+      }
+    }
+    return {'imported': imported, 'skipped': skipped};
+  }
+
+  Future<Map<String, int>> _restoreDailyStudyRoutines(dynamic rawData) async {
+    if (rawData is! List) return {'imported': 0, 'skipped': 0};
+    int imported = 0, skipped = 0;
+
+    for (final item in rawData) {
+      try {
+        if (item is! Map) {
+          skipped++;
+          continue;
+        }
+        final map = Map<String, dynamic>.from(item);
+        final routine = DailyStudyRoutine.fromJson(map);
+        if (routine.id.trim().isEmpty) {
+          skipped++;
+          continue;
+        }
+
+        await DatabaseService.saveDailyStudyRoutine(routine);
+        imported++;
+      } catch (e) {
+        skipped++;
+        debugPrint('Restore: DailyStudyRoutine skipped: $e');
       }
     }
     return {'imported': imported, 'skipped': skipped};
@@ -646,7 +931,7 @@ class GoogleDriveService {
           imported++;
         } catch (e) {
           skipped++;
-          debugPrint('Drive restore: Setting key skipped ($key): $e');
+          debugPrint('Restore: Setting skipped ($key): $e');
         }
         continue;
       }
@@ -657,7 +942,7 @@ class GoogleDriveService {
           imported++;
         } catch (e) {
           skipped++;
-          debugPrint('Drive restore: Setting overwrite skipped ($key): $e');
+          debugPrint('Restore: Setting overwrite skipped ($key): $e');
         }
         continue;
       }
@@ -667,9 +952,9 @@ class GoogleDriveService {
     return {'imported': imported, 'skipped': skipped};
   }
 
-  // ─────────────────────────────────────────────
-  // PRIVATE: AUTH & API WRAPPER
-  // ─────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════
+  // AUTH WRAPPER
+  // ═══════════════════════════════════════════════════════════
 
   Future<T> _withDriveApi<T>(
       Future<T> Function(drive.DriveApi api) action, {
@@ -693,31 +978,48 @@ class GoogleDriveService {
       final status = _tryReadStatusCode(e);
 
       if (status == 401 && !didRetry401) {
-        try { client?.close(); } catch (_) {}
-        return _withDriveApi<T>(action, didRetry401: true, didRepairScope: didRepairScope);
+        try {
+          client?.close();
+        } catch (_) {}
+        return _withDriveApi<T>(
+          action,
+          didRetry401: true,
+          didRepairScope: didRepairScope,
+        );
       }
 
       if (_looksLikeInsufficientPermissions(e) && !didRepairScope) {
-        try { client?.close(); } catch (_) {}
-        return _withDriveApi<T>(action, didRetry401: didRetry401, didRepairScope: true);
+        try {
+          client?.close();
+        } catch (_) {}
+        return _withDriveApi<T>(
+          action,
+          didRetry401: didRetry401,
+          didRepairScope: true,
+        );
       }
 
       throw _mapDriveError(e);
     } finally {
-      try { client?.close(); } catch (_) {}
+      try {
+        client?.close();
+      } catch (_) {}
     }
   }
 
-  // ─────────────────────────────────────────────
-  // PRIVATE: ERROR MAPPING & UTILITIES
-  // ─────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════
+  // HELPERS & ERROR MAPPING
+  // ═══════════════════════════════════════════════════════════
 
   bool _isSensitiveSettingKey(String key) {
+    // ✅ VIP keys removed
     const sensitiveKeys = {
-      'is_pro', 'purchased_plan',
-      'is_vip', 'vip_email', 'vip_expiry', 'vip_device_id',
-      'interstitial_counter', 'session_interstitial_count',
-      'last_interstitial_time', 'rewarded_extra_habits',
+      'is_pro',
+      'purchased_plan',
+      'interstitial_counter',
+      'session_interstitial_count',
+      'last_interstitial_time',
+      'rewarded_extra_habits',
       'leaderboard_last_uid',
     };
     return sensitiveKeys.contains(key);
@@ -734,6 +1036,8 @@ class GoogleDriveService {
       'custom_categories', 'custom_study_subjects', 'pomodoro_focus_mins',
       'pomodoro_short_break_mins', 'pomodoro_long_break_mins',
       'pomodoro_tts_enabled', 'auto_play_enabled', 'detected_country_code',
+      'auto_backup_enabled', 'auto_backup_frequency',
+      'auto_backup_wifi_only', 'psychology_nudges_enabled',
     };
     if (safeKeys.contains(key)) return true;
     if (key.startsWith('routine_unlock_expiry_')) return true;
@@ -755,20 +1059,61 @@ class GoogleDriveService {
     return value.toString();
   }
 
+  static int _asInt(dynamic value, [int fallback = 0]) {
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value) ?? fallback;
+    return fallback;
+  }
+
+  static double _asDouble(dynamic value, [double fallback = 0.0]) {
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value) ?? fallback;
+    return fallback;
+  }
+
+  static List<String> _asStringList(dynamic value) {
+    if (value is! List) return <String>[];
+    return value.map((e) => e.toString()).toList();
+  }
+
+  static List<Map<String, dynamic>> _asPostList(dynamic value) {
+    if (value is! List) return <Map<String, dynamic>>[];
+    final out = <Map<String, dynamic>>[];
+    for (final item in value) {
+      if (item is Map) {
+        out.add(Map<String, dynamic>.from(item));
+      }
+    }
+    return out;
+  }
+
+  static Map<String, int> _asStringIntMap(dynamic value) {
+    final out = <String, int>{};
+    if (value is Map) {
+      for (final entry in value.entries) {
+        out[entry.key.toString()] = _asInt(entry.value);
+      }
+    }
+    return out;
+  }
+
   int? _tryReadStatusCode(Object e) {
     final dynamic d = e;
     try {
       if (d.status is int) return d.status;
     } catch (_) {}
     final s = e.toString();
-    final match = RegExp(r'\b(400|401|403|404|409|413|429|5\d\d)\b').firstMatch(s);
+    final match =
+    RegExp(r'\b(400|401|403|404|409|413|429|5\d\d)\b').firstMatch(s);
     return match != null ? int.tryParse(match.group(0)!) : null;
   }
 
   String _tryReadApiMessage(Object e) {
     final dynamic d = e;
     try {
-      if (d.message is String && d.message.trim().isNotEmpty) return d.message.trim();
+      if (d.message is String && d.message.trim().isNotEmpty) {
+        return d.message.trim();
+      }
     } catch (_) {}
     return e.toString();
   }
@@ -792,19 +1137,27 @@ class GoogleDriveService {
     } catch (_) {}
 
     final msg = _tryReadApiMessage(e).toLowerCase();
-    const known = ['insufficientPermissions', 'accessNotConfigured', 'storageQuotaExceeded', 'dailyLimitExceeded', 'userRateLimitExceeded', 'rateLimitExceeded', 'appNotAuthorizedToUseDrive', 'forbidden'];
+    const known = [
+      'insufficientPermissions',
+      'accessNotConfigured',
+      'storageQuotaExceeded',
+      'dailyLimitExceeded',
+      'userRateLimitExceeded',
+      'rateLimitExceeded',
+      'appNotAuthorizedToUseDrive',
+      'forbidden',
+    ];
     for (final k in known) {
       if (msg.contains(k.toLowerCase())) reasons.add(k);
     }
     return reasons.map((e) => e.toLowerCase().trim()).toSet().toList();
   }
 
-  bool _looksLikeDeveloperConfigError(Object e) => e.toString().toLowerCase().contains('apiexception: 10');
-
   bool _looksLikeInsufficientPermissions(Object e) {
     if (_tryReadStatusCode(e) != 403) return false;
     final reasons = _tryReadApiReasons(e);
-    return reasons.contains('insufficientpermissions') || _tryReadApiMessage(e).toLowerCase().contains('insufficient permission');
+    return reasons.contains('insufficientpermissions') ||
+        _tryReadApiMessage(e).toLowerCase().contains('insufficient permission');
   }
 
   bool _looksLikeStorageQuotaExceeded(Object e) {
@@ -814,7 +1167,10 @@ class GoogleDriveService {
 
   bool _looksLikeAccessNotConfigured(Object e) {
     if (_tryReadStatusCode(e) != 403) return false;
-    return _tryReadApiReasons(e).contains('accessnotconfigured') || _tryReadApiMessage(e).toLowerCase().contains('api has not been used');
+    return _tryReadApiReasons(e).contains('accessnotconfigured') ||
+        _tryReadApiMessage(e)
+            .toLowerCase()
+            .contains('api has not been used');
   }
 
   bool _looksLikeRateLimit(Object e) {
@@ -825,19 +1181,51 @@ class GoogleDriveService {
 
   CloudBackupException _mapDriveError(Object e) {
     if (e is CloudBackupException) return e;
-    if (e is AuthServiceException) return CloudBackupException(e.message, cause: e);
+    if (e is AuthServiceException) {
+      return CloudBackupException(e.message, cause: e);
+    }
 
-    if (_looksLikeRateLimit(e)) return CloudBackupException('Too many requests. Please try again in a moment.', cause: e);
-    if (_looksLikeAccessNotConfigured(e)) return CloudBackupException('Google Drive API is not enabled for this project.', cause: e);
-    if (_looksLikeStorageQuotaExceeded(e)) return CloudBackupException('Google Drive storage is full. Free up space and try again.', cause: e);
-    if (_looksLikeInsufficientPermissions(e)) return CloudBackupException('Google Drive permission was not granted.', cause: e);
+    if (_looksLikeRateLimit(e)) {
+      return CloudBackupException(
+        'Too many requests. Please try again in a moment.',
+        cause: e,
+      );
+    }
+    if (_looksLikeAccessNotConfigured(e)) {
+      return CloudBackupException(
+        'Google Drive API is not enabled for this project.',
+        cause: e,
+      );
+    }
+    if (_looksLikeStorageQuotaExceeded(e)) {
+      return CloudBackupException(
+        'Google Drive storage is full. Free up space and try again.',
+        cause: e,
+      );
+    }
+    if (_looksLikeInsufficientPermissions(e)) {
+      return CloudBackupException(
+        'Google Drive permission was not granted.',
+        cause: e,
+      );
+    }
 
     final status = _tryReadStatusCode(e);
-    if (status == 401) return CloudBackupException('Your Google session has expired. Please sign in again.', cause: e);
-    if (status == 404) return CloudBackupException('No cloud backup was found.', cause: e);
+    if (status == 401) {
+      return CloudBackupException(
+        'Your Google session has expired. Please sign in again.',
+        cause: e,
+      );
+    }
+    if (status == 404) {
+      return CloudBackupException('No cloud backup was found.', cause: e);
+    }
 
     if (e.toString().toLowerCase().contains('socketexception')) {
-      return CloudBackupException('No internet connection. Please try again.', cause: e);
+      return CloudBackupException(
+        'No internet connection. Please try again.',
+        cause: e,
+      );
     }
 
     return CloudBackupException('A cloud storage error occurred.', cause: e);

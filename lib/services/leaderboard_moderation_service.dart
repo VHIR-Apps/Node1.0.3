@@ -1,18 +1,5 @@
 // lib/services/leaderboard_moderation_service.dart
-//
-// UGC Safety for Leaderboard (Google Play policy friendly):
-// - Report: sends a report document to Firestore
-// - Block: hides a user locally (blocklist stored in Hive settings)
-// - No new Hive typeId required (uses settings box keys)
-//
-// UI text must be handled in screens (English only). This service provides logic only.
-//
-// Firestore collection used for reports:
-// - leaderboard_v1_reports (add-only from clients)
-//
-// Recommended Firestore Rules (later):
-// - allow create if request.auth != null
-// - deny update/delete from clients (optional)
+
 
 import 'dart:math';
 

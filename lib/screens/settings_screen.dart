@@ -5,6 +5,7 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../config/app_config.dart';
 import '../main.dart';
@@ -29,6 +30,8 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen>
     with SingleTickerProviderStateMixin {
+  // ── Support Email ─────────────────────
+  static const String _supportEmail = 'vhirsupport@gmail.com';
 
   // ── State Variables ──────────────────
   bool _isProUser = false;
@@ -44,9 +47,9 @@ class _SettingsScreenState extends State<SettingsScreen>
   final GoogleDriveService _driveService = GoogleDriveService();
   final AuthService _authService = AuthService.instance;
 
-  bool _autoBackupEnabled = false;
-  String _autoBackupFrequency = 'daily';
-  bool _autoBackupWifiOnly = true;
+  bool _autoBackupEnabled = true;
+  String _autoBackupFrequency = 'every_change';
+  bool _autoBackupWifiOnly = false;
   DateTime? _lastAutoBackupAt;
   bool _autoBackupBusy = false;
 
@@ -178,6 +181,140 @@ class _SettingsScreenState extends State<SettingsScreen>
     } finally {
       if (mounted) setState(() => _checkingExactAlarms = false);
     }
+  }
+
+  // ════════════════════════════════════════════════════════
+  // 📧 SUPPORT EMAIL HANDLER
+  // ════════════════════════════════════════════════════════
+
+  Future<void> _openSupportEmail() async {
+    HapticFeedback.lightImpact();
+    SoundService.playTap();
+
+    final subject = Uri.encodeComponent(
+        '${AppConfig.appName} Support — v${AppConfig.version}');
+    final body = Uri.encodeComponent(
+      'Hi ${AppConfig.appName} Team,\n\n'
+          '[Please describe your issue or feedback here]\n\n'
+          '────────────────────────────\n'
+          'App Version: ${AppConfig.version}\n'
+          'Platform: ${Platform.isAndroid ? "Android" : "iOS"}\n'
+          '────────────────────────────',
+    );
+
+    final emailUri = Uri.parse(
+      'mailto:$_supportEmail?subject=$subject&body=$body',
+    );
+
+    try {
+      final canLaunch = await canLaunchUrl(emailUri);
+
+      if (canLaunch) {
+        await launchUrl(emailUri, mode: LaunchMode.externalApplication);
+      } else {
+        // ✅ Fallback: Show dialog with email
+        if (mounted) _showSupportEmailDialog();
+      }
+    } catch (e) {
+      if (mounted) _showSupportEmailDialog();
+    }
+  }
+
+  void _showSupportEmailDialog() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        backgroundColor: isDark ? const Color(0xFF151C2F) : Colors.white,
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                    colors: [Color(0xFF3B82F6), Color(0xFF2563EB)]),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.email_rounded,
+                  color: Colors.white, size: 22),
+            ),
+            const SizedBox(width: 14),
+            const Expanded(
+              child: Text('Contact Support',
+                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'No email app found. Please email us at:',
+              style: TextStyle(
+                fontSize: 14,
+                color: isDark ? Colors.white70 : Colors.black54,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    const Color(0xFF3B82F6).withOpacity(0.1),
+                    const Color(0xFF2563EB).withOpacity(0.05),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                    color: const Color(0xFF3B82F6).withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.alternate_email_rounded,
+                      color: Color(0xFF3B82F6), size: 18),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: SelectableText(
+                      _supportEmail,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                        color: isDark ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () async {
+                      await Clipboard.setData(
+                          const ClipboardData(text: _supportEmail));
+                      if (mounted) {
+                        Navigator.pop(context);
+                        _showSnack('📋 Email copied to clipboard');
+                      }
+                    },
+                    icon: const Icon(Icons.copy_rounded,
+                        size: 18, color: Color(0xFF3B82F6)),
+                    tooltip: 'Copy',
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Close',
+                style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: isDark ? Colors.white54 : Colors.black54)),
+          ),
+        ],
+      ),
+    );
   }
 
   // ════════════════════════════════════════════════════════
@@ -499,9 +636,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 ),
               ],
             ),
-
             const SizedBox(height: 20),
-
             ..._themeModes.map((mode) {
               final key = mode['key'] as String;
               final label = mode['label'] as String;
@@ -578,11 +713,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                               ]
                                   : [],
                             ),
-                            child: Icon(
-                              icon,
-                              color: Colors.white,
-                              size: 22,
-                            ),
+                            child: Icon(icon, color: Colors.white, size: 22),
                           ),
                           const SizedBox(width: 14),
                           Expanded(
@@ -611,10 +742,13 @@ class _SettingsScreenState extends State<SettingsScreen>
                                           vertical: 2,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: gradient.first.withOpacity(0.15),
-                                          borderRadius: BorderRadius.circular(6),
+                                          color:
+                                          gradient.first.withOpacity(0.15),
+                                          borderRadius:
+                                          BorderRadius.circular(6),
                                           border: Border.all(
-                                            color: gradient.first.withOpacity(0.3),
+                                            color:
+                                            gradient.first.withOpacity(0.3),
                                           ),
                                         ),
                                         child: Text(
@@ -660,13 +794,12 @@ class _SettingsScreenState extends State<SettingsScreen>
                               width: 28,
                               height: 28,
                               decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: gradient,
-                                ),
+                                gradient: LinearGradient(colors: gradient),
                                 shape: BoxShape.circle,
                                 boxShadow: [
                                   BoxShadow(
-                                    color: gradient.first.withOpacity(0.4),
+                                    color:
+                                    gradient.first.withOpacity(0.4),
                                     blurRadius: 8,
                                   ),
                                 ],
@@ -699,7 +832,6 @@ class _SettingsScreenState extends State<SettingsScreen>
                 ),
               );
             }),
-
             AnimatedContainer(
               duration: const Duration(milliseconds: 300),
               padding: const EdgeInsets.all(12),
@@ -746,34 +878,52 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   String _getFrequencyLabel(String key) {
     switch (key) {
-      case 'on_exit': return 'On App Exit';
-      case 'every_change': return 'After Every Change';
-      case 'hourly': return 'Every Hour';
-      case 'daily': return 'Once Daily';
-      case 'weekly': return 'Once Weekly';
-      default: return 'Once Daily';
+      case 'on_exit':
+        return 'On App Exit';
+      case 'every_change':
+        return 'After Every Change';
+      case 'hourly':
+        return 'Every Hour';
+      case 'daily':
+        return 'Once Daily';
+      case 'weekly':
+        return 'Once Weekly';
+      default:
+        return 'After Every Change';
     }
   }
 
   String _getFrequencyDescription(String key) {
     switch (key) {
-      case 'on_exit': return 'Backs up when you leave the app';
-      case 'every_change': return 'Real-time sync after each update';
-      case 'hourly': return 'Automatic backup every 1 hour';
-      case 'daily': return 'One backup per day (recommended)';
-      case 'weekly': return 'Saves data every 7 days';
-      default: return '';
+      case 'on_exit':
+        return 'Backs up when you close the app';
+      case 'every_change':
+        return '⭐ Recommended - Auto sync after every change';
+      case 'hourly':
+        return 'Automatic backup every 1 hour';
+      case 'daily':
+        return 'One backup per day';
+      case 'weekly':
+        return 'Saves data every 7 days';
+      default:
+        return '';
     }
   }
 
   IconData _getFrequencyIcon(String key) {
     switch (key) {
-      case 'on_exit': return Icons.exit_to_app_rounded;
-      case 'every_change': return Icons.sync_rounded;
-      case 'hourly': return Icons.schedule_rounded;
-      case 'daily': return Icons.today_rounded;
-      case 'weekly': return Icons.date_range_rounded;
-      default: return Icons.today_rounded;
+      case 'on_exit':
+        return Icons.exit_to_app_rounded;
+      case 'every_change':
+        return Icons.sync_rounded;
+      case 'hourly':
+        return Icons.schedule_rounded;
+      case 'daily':
+        return Icons.today_rounded;
+      case 'weekly':
+        return Icons.date_range_rounded;
+      default:
+        return Icons.sync_rounded;
     }
   }
 
@@ -781,7 +931,14 @@ class _SettingsScreenState extends State<SettingsScreen>
     HapticFeedback.lightImpact();
     SoundService.playTap();
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final frequencies = ['on_exit', 'every_change', 'hourly', 'daily', 'weekly'];
+
+    final frequencies = [
+      'every_change',
+      'on_exit',
+      'hourly',
+      'daily',
+      'weekly',
+    ];
 
     final selected = await showModalBottomSheet<String>(
       context: context,
@@ -886,7 +1043,9 @@ class _SettingsScreenState extends State<SettingsScreen>
         decoration: BoxDecoration(
           color: isSelected
               ? const Color(0xFF10B981).withOpacity(0.12)
-              : (isDark ? Colors.white.withOpacity(0.04) : Colors.black.withOpacity(0.03)),
+              : (isDark
+              ? Colors.white.withOpacity(0.04)
+              : Colors.black.withOpacity(0.03)),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: isSelected ? const Color(0xFF10B981) : Colors.transparent,
@@ -911,7 +1070,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                     _getFrequencyLabel(value),
                     style: TextStyle(
                       fontSize: 15,
-                      fontWeight: isSelected ? FontWeight.w900 : FontWeight.w600,
+                      fontWeight:
+                      isSelected ? FontWeight.w900 : FontWeight.w600,
                       color: isDark ? Colors.white : Colors.black87,
                     ),
                   ),
@@ -933,7 +1093,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                   color: Color(0xFF10B981),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.check_rounded, color: Colors.white, size: 16),
+                child: const Icon(Icons.check_rounded,
+                    color: Colors.white, size: 16),
               ),
           ],
         ),
@@ -1047,7 +1208,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                   _nudgeInfoRow(
                       isDark: isDark,
                       emoji: '🤷',
-                      text: 'Reverse psychology to challenge your discipline'),
+                      text:
+                      'Reverse psychology to challenge your discipline'),
                 ],
               ),
             ),
@@ -1135,8 +1297,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                   ),
                 ),
                 Container(
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 8),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
@@ -1183,8 +1345,9 @@ class _SettingsScreenState extends State<SettingsScreen>
                                   'Public Visibility',
                                   style: TextStyle(
                                     fontWeight: FontWeight.w800,
-                                    color:
-                                    isDark ? Colors.white : Colors.black87,
+                                    color: isDark
+                                        ? Colors.white
+                                        : Colors.black87,
                                   ),
                                 ),
                                 const SizedBox(height: 2),
@@ -1219,11 +1382,12 @@ class _SettingsScreenState extends State<SettingsScreen>
                             onPressed: (!signedIn || busy)
                                 ? null
                                 : _openLeaderboardProfile,
-                            icon: const Icon(Icons.person_rounded, size: 18),
+                            icon:
+                            const Icon(Icons.person_rounded, size: 18),
                             label: const Text('Manage Profile'),
                             style: OutlinedButton.styleFrom(
-                              padding:
-                              const EdgeInsets.symmetric(vertical: 14),
+                              padding: const EdgeInsets.symmetric(
+                                  vertical: 14),
                               shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(16)),
                             ),
@@ -1235,14 +1399,15 @@ class _SettingsScreenState extends State<SettingsScreen>
                             onPressed: (!signedIn || busy)
                                 ? null
                                 : _deleteLeaderboardCloudProfile,
-                            icon: const Icon(Icons.delete_forever_rounded,
+                            icon: const Icon(
+                                Icons.delete_forever_rounded,
                                 size: 18),
                             label: const Text('Delete Cloud'),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppConfig.errorColor,
                               foregroundColor: Colors.white,
-                              padding:
-                              const EdgeInsets.symmetric(vertical: 14),
+                              padding: const EdgeInsets.symmetric(
+                                  vertical: 14),
                               shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(16)),
                             ),
@@ -1265,7 +1430,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                                   color: Colors.white, strokeWidth: 2))
                               : const Icon(Icons.login_rounded),
                           label: const Text('Sign In to Manage',
-                              style: TextStyle(fontWeight: FontWeight.w900)),
+                              style:
+                              TextStyle(fontWeight: FontWeight.w900)),
                           style: ElevatedButton.styleFrom(
                             shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(16)),
@@ -1389,8 +1555,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 width: double.infinity,
                 height: 52,
                 child: ElevatedButton.icon(
-                  onPressed:
-                  _autoBackupBusy ? null : _signInForAutoBackup,
+                  onPressed: _autoBackupBusy ? null : _signInForAutoBackup,
                   icon: _autoBackupBusy
                       ? const SizedBox(
                       width: 20,
@@ -1445,7 +1610,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                               style: TextStyle(
                                 fontWeight: FontWeight.w800,
                                 fontSize: 14,
-                                color: isDark ? Colors.white : Colors.black87,
+                                color:
+                                isDark ? Colors.white : Colors.black87,
                               ),
                             ),
                             const SizedBox(height: 2),
@@ -1484,7 +1650,9 @@ class _SettingsScreenState extends State<SettingsScreen>
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          'Save mobile data',
+                          _autoBackupWifiOnly
+                              ? 'Backup only on Wi-Fi'
+                              : 'Backup on Wi-Fi + Mobile Data',
                           style: TextStyle(
                             fontSize: 12,
                             color: isDark ? Colors.white54 : Colors.black54,
@@ -1501,6 +1669,9 @@ class _SettingsScreenState extends State<SettingsScreen>
                       HapticFeedback.lightImpact();
                       await DatabaseService.setAutoBackupWifiOnly(val);
                       setState(() => _autoBackupWifiOnly = val);
+                      _showSnack(val
+                          ? 'Backup restricted to Wi-Fi only'
+                          : 'Backup on any connection');
                     },
                   ),
                 ],
@@ -1629,8 +1800,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Delete Cloud Profile?'),
-        content:
-        const Text('You will disappear from public ranking.'),
+        content: const Text('You will disappear from public ranking.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context, false),
@@ -1639,8 +1809,8 @@ class _SettingsScreenState extends State<SettingsScreen>
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(
                 backgroundColor: AppConfig.errorColor),
-            child:
-            const Text('Delete', style: TextStyle(color: Colors.white)),
+            child: const Text('Delete',
+                style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -1783,10 +1953,12 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   String _prettyError(Object e) {
     final msg = e.toString();
-    if (msg.contains('Sign-in was cancelled') || msg.contains('cancelled'))
+    if (msg.contains('Sign-in was cancelled') || msg.contains('cancelled')) {
       return 'Sign-in was cancelled.';
-    if (msg.contains('SocketException') || msg.contains('network'))
+    }
+    if (msg.contains('SocketException') || msg.contains('network')) {
       return 'No internet connection. Please try again.';
+    }
     final cleaned = msg
         .replaceAll('AuthServiceException:', '')
         .replaceAll('CloudBackupException:', '')
@@ -1945,8 +2117,8 @@ class _SettingsScreenState extends State<SettingsScreen>
         centerTitle: true,
         backgroundColor: Colors.transparent,
         elevation: 0,
-        iconTheme: IconThemeData(
-            color: isDark ? Colors.white : Colors.black87),
+        iconTheme:
+        IconThemeData(color: isDark ? Colors.white : Colors.black87),
         flexibleSpace: ClipRRect(
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
@@ -2017,8 +2189,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   delegate: SliverChildListDelegate([
                     if (!_isProUser && AppConfig.enableProVersion)
                       Padding(
-                        padding:
-                        const EdgeInsets.symmetric(horizontal: 20),
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
                         child: _buildGlassContainer(
                           isDark: isDark,
                           gradientColors: [
@@ -2039,16 +2210,13 @@ class _SettingsScreenState extends State<SettingsScreen>
                                         style: TextStyle(
                                             color: Colors.white,
                                             fontSize: 18,
-                                            fontWeight:
-                                            FontWeight.w900)),
-                                    Text(
-                                        'Ad-free • Unlimited Limits',
+                                            fontWeight: FontWeight.w900)),
+                                    Text('Ad-free • Unlimited Limits',
                                         style: TextStyle(
                                             color: Colors.white
                                                 .withOpacity(0.85),
                                             fontSize: 12.5,
-                                            fontWeight:
-                                            FontWeight.w700)),
+                                            fontWeight: FontWeight.w700)),
                                   ],
                                 ),
                               ),
@@ -2061,8 +2229,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                 ).then((_) => _load()),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.white,
-                                  foregroundColor:
-                                  const Color(0xFFF59E0B),
+                                  foregroundColor: const Color(0xFFF59E0B),
                                   shape: RoundedRectangleBorder(
                                       borderRadius:
                                       BorderRadius.circular(14)),
@@ -2076,23 +2243,18 @@ class _SettingsScreenState extends State<SettingsScreen>
                           ),
                         ),
                       ),
-
                     _sectionHeader('Appearance',
                         icon: Icons.palette_rounded),
                     _themeSelector(isDark),
-
                     _sectionHeader('Data & Cloud Sync',
                         icon: Icons.cloud_sync_rounded),
                     _autoBackupCard(isDark),
-
                     _sectionHeader('Motivation & Psychology',
                         icon: Icons.psychology_rounded),
                     _psychologyNudgesCard(isDark),
-
                     _sectionHeader('Ranking & Competition',
                         icon: Icons.emoji_events_rounded),
                     _leaderboardCard(isDark),
-
                     _sectionHeader('Preferences',
                         icon: Icons.tune_rounded),
                     _buildTileGroup([
@@ -2142,8 +2304,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                           activeTrackColor: Colors.amber,
                           onChanged: (v) {
                             DatabaseService.setNotifications(v);
-                            setState(
-                                    () => _notificationsEnabled = v);
+                            setState(() => _notificationsEnabled = v);
                           },
                         ),
                       ),
@@ -2156,7 +2317,6 @@ class _SettingsScreenState extends State<SettingsScreen>
                         onTap: _pickAutoResetTime,
                       ),
                     ], isDark),
-
                     _sectionHeader('Routine Sharing',
                         icon: Icons.share_rounded),
                     _buildTileGroup([
@@ -2184,6 +2344,47 @@ class _SettingsScreenState extends State<SettingsScreen>
                       ),
                     ], isDark),
 
+                    // ═══════════════════════════════════════
+                    // 📧 NEW: HELP & SUPPORT SECTION
+                    // ═══════════════════════════════════════
+                    _sectionHeader('Help & Support',
+                        icon: Icons.support_agent_rounded),
+                    _buildTileGroup([
+                      _premiumTile(
+                        icon: Icons.email_rounded,
+                        gradient: [
+                          const Color(0xFF3B82F6),
+                          const Color(0xFF2563EB),
+                        ],
+                        title: 'Contact Support',
+                        subtitle: _supportEmail,
+                        isDark: isDark,
+                        onTap: _openSupportEmail,
+                      ),
+                      _premiumTile(
+                        icon: Icons.bug_report_rounded,
+                        gradient: [
+                          const Color(0xFFEF4444),
+                          const Color(0xFFDC2626),
+                        ],
+                        title: 'Report a Bug',
+                        subtitle: 'Help us improve the app',
+                        isDark: isDark,
+                        onTap: _openSupportEmail,
+                      ),
+                      _premiumTile(
+                        icon: Icons.lightbulb_rounded,
+                        gradient: [
+                          const Color(0xFFF59E0B),
+                          const Color(0xFFD97706),
+                        ],
+                        title: 'Feature Request',
+                        subtitle: 'Suggest new features',
+                        isDark: isDark,
+                        onTap: _openSupportEmail,
+                      ),
+                    ], isDark),
+
                     _sectionHeader('Danger Zone',
                         icon: Icons.warning_rounded),
                     _buildTileGroup([
@@ -2204,7 +2405,6 @@ class _SettingsScreenState extends State<SettingsScreen>
                         onTap: _deleteAllHabits,
                       ),
                     ], isDark),
-
                     _sectionHeader('About & Legal',
                         icon: Icons.info_rounded),
                     _buildTileGroup([
@@ -2244,7 +2444,6 @@ class _SettingsScreenState extends State<SettingsScreen>
                         isDark: isDark,
                       ),
                     ], isDark),
-
                     const SizedBox(height: 30),
                   ]),
                 ),

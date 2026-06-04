@@ -11,6 +11,7 @@ import '../models/notification_model.dart';
 import '../models/study_routine_model.dart';
 import '../models/study_session_model.dart';
 import '../models/study_target_model.dart';
+import 'auto_backup_trigger.dart';
 import 'leaderboard_service.dart';
 import 'notes_service.dart';
 
@@ -21,13 +22,11 @@ class DatabaseService {
   static const String studySessionsBox = 'study_sessions';
   static const String routinesBox = 'study_routines';
 
-  // 🆕 Study Targets & Daily Study Routine (recurring schedule)
   static const String studyTargetsBox = 'study_targets';
   static const String dailyStudyRoutinesBox = 'daily_study_routines';
 
   static const String _kDefaultStudyTargetId = 'default_study_target';
 
-  // 🏆 Leaderboard (local profile cache + prefs)
   static const String leaderboardProfileBox = 'leaderboard_profile';
   static const String _kLeaderboardLastUid = 'leaderboard_last_uid';
 
@@ -37,13 +36,8 @@ class DatabaseService {
   static late Box<StudySession> _studySessionsBox;
   static late Box<StudyRoutine> _routinesBox;
 
-  // Nullable: to avoid startup crash if adapter isn't registered yet.
   static Box<LeaderboardProfileModel>? _leaderboardProfileBox;
-
-  // Nullable: safe open (requires adapters: StudyTarget typeId 7)
   static Box<StudyTarget>? _studyTargetsBox;
-
-  // Nullable: safe open (requires adapters: DailyStudyRoutine typeId 8 + DailyStudyBlock typeId 9)
   static Box<DailyStudyRoutine>? _dailyStudyRoutinesBox;
 
   static bool _leaderboardOpenAttemptInProgress = false;
@@ -57,69 +51,46 @@ class DatabaseService {
     _studySessionsBox = await Hive.openBox<StudySession>(studySessionsBox);
     _routinesBox = await Hive.openBox<StudyRoutine>(routinesBox);
 
-    // Leaderboard box (safe open)
     await _openLeaderboardBoxSafely();
-
-    // Study Targets box (safe open; avoid startup crash if adapter not registered yet)
     await _openStudyTargetsBoxSafely();
-
-    // Daily Study Routines box (safe open)
     await _openDailyStudyRoutinesBoxSafely();
+
+    // 🗑️ Legacy VIP cleanup (one time)
+    await _cleanupLegacyVipKeys();
 
     if (!_settingsBox.containsKey('ad_sound_muted')) {
       await _settingsBox.put('ad_sound_muted', !AppConfig.adSoundEnabled);
     }
-
     if (!_settingsBox.containsKey('dynamic_translation_enabled')) {
       await _settingsBox.put('dynamic_translation_enabled', false);
     }
-
     if (!_settingsBox.containsKey('sound_effects_enabled')) {
       await _settingsBox.put('sound_effects_enabled', true);
     }
     if (!_settingsBox.containsKey('tts_enabled')) {
       await _settingsBox.put('tts_enabled', true);
     }
-
     if (!_settingsBox.containsKey('last_known_level')) {
       await _settingsBox.put('last_known_level', 1);
     }
-
     if (!_settingsBox.containsKey('custom_categories')) {
       await _settingsBox.put('custom_categories', <String>[]);
     }
-
     if (!_settingsBox.containsKey('last_missed_dialog_date')) {
       await _settingsBox.put('last_missed_dialog_date', '');
     }
-
     if (!_settingsBox.containsKey('auto_reset_hour')) {
       await _settingsBox.put('auto_reset_hour', 0);
     }
     if (!_settingsBox.containsKey('auto_reset_minute')) {
       await _settingsBox.put('auto_reset_minute', 0);
     }
-
-    if (!_settingsBox.containsKey('is_vip')) {
-      await _settingsBox.put('is_vip', false);
-    }
-    if (!_settingsBox.containsKey('vip_email')) {
-      await _settingsBox.put('vip_email', '');
-    }
-    if (!_settingsBox.containsKey('vip_expiry')) {
-      await _settingsBox.put('vip_expiry', 0);
-    }
-    if (!_settingsBox.containsKey('vip_device_id')) {
-      await _settingsBox.put('vip_device_id', '');
-    }
-
     if (!_settingsBox.containsKey('last_seen_notification_time')) {
       await _settingsBox.put('last_seen_notification_time', 0);
     }
     if (!_settingsBox.containsKey('last_config_fetch_time')) {
       await _settingsBox.put('last_config_fetch_time', 0);
     }
-
     if (!_settingsBox.containsKey('pomodoro_focus_mins')) {
       await _settingsBox.put(
         'pomodoro_focus_mins',
@@ -141,7 +112,6 @@ class DatabaseService {
     if (!_settingsBox.containsKey('custom_study_subjects')) {
       await _settingsBox.put('custom_study_subjects', <String>[]);
     }
-
     if (!_settingsBox.containsKey('auto_play_enabled')) {
       await _settingsBox.put('auto_play_enabled', false);
     }
@@ -154,32 +124,55 @@ class DatabaseService {
     if (!_settingsBox.containsKey('vibrate_on_complete')) {
       await _settingsBox.put('vibrate_on_complete', true);
     }
-
     if (!_settingsBox.containsKey(_kLeaderboardLastUid)) {
       await _settingsBox.put(_kLeaderboardLastUid, '');
     }
 
-    // ═══════════════════════════════════════
-    // AUTO BACKUP SETTINGS
-    // ═══════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════
+    // 🚀 AUTO BACKUP SETTINGS - DEFAULTS
+    // ═══════════════════════════════════════════════════════════
+
     if (!_settingsBox.containsKey('auto_backup_enabled')) {
-      await _settingsBox.put('auto_backup_enabled', false);
+      await _settingsBox.put('auto_backup_enabled', true);
     }
     if (!_settingsBox.containsKey('auto_backup_frequency')) {
-      await _settingsBox.put('auto_backup_frequency', 'daily');
+      await _settingsBox.put('auto_backup_frequency', 'every_change');
     }
+    // ✅ Default: WiFi + Mobile Data দুটোই
     if (!_settingsBox.containsKey('auto_backup_wifi_only')) {
-      await _settingsBox.put('auto_backup_wifi_only', true);
+      await _settingsBox.put('auto_backup_wifi_only', false);
     }
     if (!_settingsBox.containsKey('last_auto_backup_time')) {
       await _settingsBox.put('last_auto_backup_time', 0);
     }
+    if (!_settingsBox.containsKey('has_pending_backup')) {
+      await _settingsBox.put('has_pending_backup', false);
+    }
 
-    // ═══════════════════════════════════════
-    // 🧠 PHASE 2: PSYCHOLOGY NUDGE SETTING
-    // ═══════════════════════════════════════
     if (!_settingsBox.containsKey('psychology_nudges_enabled')) {
       await _settingsBox.put('psychology_nudges_enabled', true);
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // 🗑️ LEGACY VIP CLEANUP
+  // ─────────────────────────────────────────────
+
+  static Future<void> _cleanupLegacyVipKeys() async {
+    const legacyKeys = [
+      'is_vip',
+      'vip_email',
+      'vip_expiry',
+      'vip_device_id',
+    ];
+
+    for (final key in legacyKeys) {
+      if (_settingsBox.containsKey(key)) {
+        try {
+          await _settingsBox.delete(key);
+          debugPrint('🗑️ Removed legacy VIP key: $key');
+        } catch (_) {}
+      }
     }
   }
 
@@ -193,19 +186,14 @@ class DatabaseService {
       await Hive.openBox<LeaderboardProfileModel>(leaderboardProfileBox);
     } catch (e) {
       _leaderboardProfileBox = null;
-      debugPrint(
-        '⚠️ Leaderboard box open failed (adapter missing or corrupted box): $e',
-      );
+      debugPrint('⚠️ Leaderboard box open failed: $e');
     }
   }
 
   static Future<Box<LeaderboardProfileModel>?> _ensureLeaderboardBox() async {
     final box = _leaderboardProfileBox;
     if (box != null && box.isOpen) return box;
-
-    if (_leaderboardOpenAttemptInProgress) {
-      return _leaderboardProfileBox;
-    }
+    if (_leaderboardOpenAttemptInProgress) return _leaderboardProfileBox;
 
     _leaderboardOpenAttemptInProgress = true;
     try {
@@ -228,16 +216,13 @@ class DatabaseService {
       _studyTargetsBox = await Hive.openBox<StudyTarget>(studyTargetsBox);
     } catch (e) {
       _studyTargetsBox = null;
-      debugPrint(
-        '⚠️ StudyTargets box open failed (adapter missing or corrupted box): $e',
-      );
+      debugPrint('⚠️ StudyTargets box open failed: $e');
     }
   }
 
   static Future<Box<StudyTarget>?> _ensureStudyTargetsBox() async {
     final box = _studyTargetsBox;
     if (box != null && box.isOpen) return box;
-
     if (_studyTargetsOpenAttemptInProgress) return _studyTargetsBox;
 
     _studyTargetsOpenAttemptInProgress = true;
@@ -253,7 +238,7 @@ class DatabaseService {
       _studyTargetsBox != null && _studyTargetsBox!.isOpen;
 
   // ─────────────────────────────────────────────
-  // SAFE OPEN: Daily Study Routines (recurring)
+  // SAFE OPEN: Daily Study Routines
   // ─────────────────────────────────────────────
 
   static Future<void> _openDailyStudyRoutinesBoxSafely() async {
@@ -262,16 +247,13 @@ class DatabaseService {
       await Hive.openBox<DailyStudyRoutine>(dailyStudyRoutinesBox);
     } catch (e) {
       _dailyStudyRoutinesBox = null;
-      debugPrint(
-        '⚠️ DailyStudyRoutines box open failed (adapter missing or corrupted box): $e',
-      );
+      debugPrint('⚠️ DailyStudyRoutines box open failed: $e');
     }
   }
 
   static Future<Box<DailyStudyRoutine>?> _ensureDailyStudyRoutinesBox() async {
     final box = _dailyStudyRoutinesBox;
     if (box != null && box.isOpen) return box;
-
     if (_dailyRoutinesOpenAttemptInProgress) return _dailyStudyRoutinesBox;
 
     _dailyRoutinesOpenAttemptInProgress = true;
@@ -287,7 +269,7 @@ class DatabaseService {
       _dailyStudyRoutinesBox != null && _dailyStudyRoutinesBox!.isOpen;
 
   // ═══════════════════════════════════════
-  // 🏆 LEADERBOARD PROFILE (LOCAL CACHE)
+  // 🏆 LEADERBOARD PROFILE
   // ═══════════════════════════════════════
 
   static String getLeaderboardLastUid() {
@@ -298,7 +280,8 @@ class DatabaseService {
     await _settingsBox.put(_kLeaderboardLastUid, uid);
   }
 
-  static LeaderboardProfileModel _normalizeLeaderboardProfile(LeaderboardProfileModel p) {
+  static LeaderboardProfileModel _normalizeLeaderboardProfile(
+      LeaderboardProfileModel p) {
     final safeName = LeaderboardProfileModel.safeDisplayName(p.displayName);
     final safeEmoji = (p.avatarEmoji.trim().isEmpty)
         ? '🙂'
@@ -319,7 +302,6 @@ class DatabaseService {
 
     if (!needsFix) return p;
 
-    // 🚀 NEW FIELDS INCLUDED
     return LeaderboardProfileModel(
       uid: p.uid,
       displayName: safeName,
@@ -387,23 +369,20 @@ class DatabaseService {
     }
   }
 
-  static Future<void> saveLeaderboardProfile(LeaderboardProfileModel profile) async {
+  static Future<void> saveLeaderboardProfile(
+      LeaderboardProfileModel profile) async {
     try {
-      if (profile.uid.trim().isEmpty) {
-        debugPrint('⚠️ saveLeaderboardProfile skipped: empty uid');
-        return;
-      }
+      if (profile.uid.trim().isEmpty) return;
 
       final box = await _ensureLeaderboardBox();
-      if (box == null || !box.isOpen) {
-        debugPrint('⚠️ saveLeaderboardProfile skipped: box not available');
-        return;
-      }
+      if (box == null || !box.isOpen) return;
 
       final normalized = _normalizeLeaderboardProfile(profile);
 
       await box.put(normalized.uid, normalized);
       await setLeaderboardLastUid(normalized.uid);
+
+      AutoBackupTrigger.notifyChange('profile_updated');
     } catch (e) {
       debugPrint('⚠️ saveLeaderboardProfile error: $e');
     }
@@ -450,7 +429,6 @@ class DatabaseService {
     }
   }
 
-  // 🚀 NEW: Update Social Activity and Pro indicators
   static Future<void> updateLeaderboardActivityStatus() async {
     final uid = getLeaderboardLastUid();
     if (uid.isEmpty) return;
@@ -459,12 +437,11 @@ class DatabaseService {
     if (p == null) return;
 
     p.lastActiveMs = DateTime.now().toUtc().millisecondsSinceEpoch;
-    p.isProUser = isProOrVipUser();
+    p.isProUser = isProUser();
 
     await saveLeaderboardProfile(p);
   }
 
-  // 🚀 NEW: Add Social Post
   static Future<void> addSocialPost(String text) async {
     final uid = getLeaderboardLastUid();
     if (uid.isEmpty) return;
@@ -478,22 +455,26 @@ class DatabaseService {
     };
 
     p.posts.insert(0, post);
-    if (p.posts.length > 20) p.posts = p.posts.sublist(0, 20); // Keep last 20 posts max
+    if (p.posts.length > 20) p.posts = p.posts.sublist(0, 20);
 
     await saveLeaderboardProfile(p);
 
-    // Auto cloud sync
-    if(p.isOptedIn) {
-      try { await LeaderboardService.instance.syncMyProfileToCloud(); } catch (_) {}
+    if (p.isOptedIn) {
+      try {
+        await LeaderboardService.instance.syncMyProfileToCloud();
+      } catch (_) {}
     }
+
+    AutoBackupTrigger.notifyChange('post_added');
   }
 
   // ═══════════════════════════════════════
-  // 🍅 STUDY ROUTINES (Pomodoro routines)
+  // 🍅 STUDY ROUTINES
   // ═══════════════════════════════════════
 
   static Future<void> saveRoutine(StudyRoutine routine) async {
     await _routinesBox.put(routine.id, routine);
+    AutoBackupTrigger.notifyChange('routine_saved');
   }
 
   static List<StudyRoutine> getAllRoutines() {
@@ -507,14 +488,17 @@ class DatabaseService {
 
   static Future<void> updateRoutine(StudyRoutine routine) async {
     await _routinesBox.put(routine.id, routine);
+    AutoBackupTrigger.notifyChange('routine_updated');
   }
 
   static Future<void> deleteRoutine(String id) async {
     await _routinesBox.delete(id);
+    AutoBackupTrigger.notifyChange('routine_deleted');
   }
 
   static Future<void> deleteAllRoutines() async {
     await _routinesBox.clear();
+    AutoBackupTrigger.notifyChange('routines_cleared');
   }
 
   static int getRoutineCount() => _routinesBox.length;
@@ -528,7 +512,7 @@ class DatabaseService {
   }
 
   // ═══════════════════════════════════════
-  // 🎯 STUDY TARGETS (Daily / Weekly / Subject)
+  // 🎯 STUDY TARGETS
   // ═══════════════════════════════════════
 
   static StudyTarget? getStudyTargetLocal() {
@@ -556,9 +540,7 @@ class DatabaseService {
 
     try {
       final box = await _ensureStudyTargetsBox();
-      if (box == null || !box.isOpen) {
-        return fallback;
-      }
+      if (box == null || !box.isOpen) return fallback;
 
       final existing = box.get(_kDefaultStudyTargetId);
       if (existing != null) return existing;
@@ -574,13 +556,11 @@ class DatabaseService {
   static Future<void> saveStudyTarget(StudyTarget target) async {
     try {
       final box = await _ensureStudyTargetsBox();
-      if (box == null || !box.isOpen) {
-        debugPrint('⚠️ saveStudyTarget skipped: box not available');
-        return;
-      }
+      if (box == null || !box.isOpen) return;
 
       final updated = target.copyWith(updatedAt: DateTime.now());
       await box.put(_kDefaultStudyTargetId, updated);
+      AutoBackupTrigger.notifyChange('study_target_saved');
     } catch (e) {
       debugPrint('⚠️ saveStudyTarget error: $e');
     }
@@ -625,7 +605,7 @@ class DatabaseService {
   }
 
   // ═══════════════════════════════════════
-  // 🗓️ DAILY STUDY ROUTINES (Recurring schedule)
+  // 🗓️ DAILY STUDY ROUTINES
   // ═══════════════════════════════════════
 
   static List<DailyStudyRoutine> getAllDailyStudyRoutines() {
@@ -658,6 +638,7 @@ class DatabaseService {
       final box = await _ensureDailyStudyRoutinesBox();
       if (box != null && box.isOpen) {
         await box.put(routine.id, routine.copyWith(updatedAt: DateTime.now()));
+        AutoBackupTrigger.notifyChange('daily_routine_saved');
       }
     } catch (e) {
       debugPrint('⚠️ saveDailyStudyRoutine error: $e');
@@ -669,6 +650,7 @@ class DatabaseService {
       final box = await _ensureDailyStudyRoutinesBox();
       if (box != null && box.isOpen) {
         await box.delete(id);
+        AutoBackupTrigger.notifyChange('daily_routine_deleted');
       }
     } catch (e) {
       debugPrint('⚠️ deleteDailyStudyRoutine error: $e');
@@ -694,36 +676,36 @@ class DatabaseService {
   // 🍅 ADVANCED POMODORO SETTINGS
   // ═══════════════════════════════════════
 
-  static bool getAutoPlayEnabled() {
-    return _settingsBox.get('auto_play_enabled', defaultValue: false) as bool;
-  }
+  static bool getAutoPlayEnabled() =>
+      _settingsBox.get('auto_play_enabled', defaultValue: false) as bool;
 
   static Future<void> setAutoPlayEnabled(bool enabled) async {
     await _settingsBox.put('auto_play_enabled', enabled);
+    AutoBackupTrigger.notifyChange('setting_changed');
   }
 
-  static bool getPomodoroTtsEnabled() {
-    return _settingsBox.get('pomodoro_tts_enabled', defaultValue: true) as bool;
-  }
+  static bool getPomodoroTtsEnabled() =>
+      _settingsBox.get('pomodoro_tts_enabled', defaultValue: true) as bool;
 
   static Future<void> setPomodoroTtsEnabled(bool enabled) async {
     await _settingsBox.put('pomodoro_tts_enabled', enabled);
+    AutoBackupTrigger.notifyChange('setting_changed');
   }
 
-  static bool getKeepScreenOn() {
-    return _settingsBox.get('keep_screen_on', defaultValue: true) as bool;
-  }
+  static bool getKeepScreenOn() =>
+      _settingsBox.get('keep_screen_on', defaultValue: true) as bool;
 
   static Future<void> setKeepScreenOn(bool enabled) async {
     await _settingsBox.put('keep_screen_on', enabled);
+    AutoBackupTrigger.notifyChange('setting_changed');
   }
 
-  static bool getVibrateOnComplete() {
-    return _settingsBox.get('vibrate_on_complete', defaultValue: true) as bool;
-  }
+  static bool getVibrateOnComplete() =>
+      _settingsBox.get('vibrate_on_complete', defaultValue: true) as bool;
 
   static Future<void> setVibrateOnComplete(bool enabled) async {
     await _settingsBox.put('vibrate_on_complete', enabled);
+    AutoBackupTrigger.notifyChange('setting_changed');
   }
 
   // ═══════════════════════════════════════
@@ -759,11 +741,12 @@ class DatabaseService {
         await _settingsBox.put('best_study_streak', currentStreak);
       }
     }
+
+    AutoBackupTrigger.notifyChange('study_session_saved');
   }
 
-  static List<StudySession> getAllStudySessions() {
-    return _studySessionsBox.values.toList();
-  }
+  static List<StudySession> getAllStudySessions() =>
+      _studySessionsBox.values.toList();
 
   static List<StudySession> getFocusSessionsOnly() {
     return _studySessionsBox.values
@@ -842,6 +825,7 @@ class DatabaseService {
     await _settingsBox.put('pomodoro_focus_mins', focusMins);
     await _settingsBox.put('pomodoro_short_break_mins', shortBreakMins);
     await _settingsBox.put('pomodoro_long_break_mins', longBreakMins);
+    AutoBackupTrigger.notifyChange('pomodoro_settings_changed');
   }
 
   static List<String> getCustomStudySubjects() {
@@ -858,6 +842,7 @@ class DatabaseService {
     if (!subjects.contains(subject)) {
       subjects.add(subject);
       await _settingsBox.put('custom_study_subjects', subjects);
+      AutoBackupTrigger.notifyChange('subject_added');
     }
   }
 
@@ -865,15 +850,14 @@ class DatabaseService {
     final subjects = getCustomStudySubjects();
     subjects.remove(subject);
     await _settingsBox.put('custom_study_subjects', subjects);
+    AutoBackupTrigger.notifyChange('subject_removed');
   }
 
   // ═══════════════════════════════════════
   // HABIT CRUD
   // ═══════════════════════════════════════
 
-  static List<Habit> getAllHabits() {
-    return _habitsBox.values.toList();
-  }
+  static List<Habit> getAllHabits() => _habitsBox.values.toList();
 
   static Habit? getHabitById(String id) {
     try {
@@ -885,18 +869,22 @@ class DatabaseService {
 
   static Future<void> addHabit(Habit habit) async {
     await _habitsBox.put(habit.id, habit);
+    AutoBackupTrigger.notifyChange('habit_added');
   }
 
   static Future<void> updateHabit(Habit habit) async {
     await _habitsBox.put(habit.id, habit);
+    AutoBackupTrigger.notifyChange('habit_updated');
   }
 
   static Future<void> deleteHabit(String id) async {
     await _habitsBox.delete(id);
+    AutoBackupTrigger.notifyChange('habit_deleted');
   }
 
   static Future<void> deleteAllHabits() async {
     await _habitsBox.clear();
+    AutoBackupTrigger.notifyChange('habits_cleared');
   }
 
   // ═══════════════════════════════════════
@@ -942,9 +930,8 @@ class DatabaseService {
     await _notificationsBox.clear();
   }
 
-  static AppNotification? getNotificationById(String id) {
-    return _notificationsBox.get(id);
-  }
+  static AppNotification? getNotificationById(String id) =>
+      _notificationsBox.get(id);
 
   // ═══════════════════════════════════════
   // CUSTOM CATEGORIES
@@ -963,6 +950,7 @@ class DatabaseService {
     if (!categories.contains(category)) {
       categories.add(category);
       await _settingsBox.put('custom_categories', categories);
+      AutoBackupTrigger.notifyChange('category_added');
     }
   }
 
@@ -970,15 +958,15 @@ class DatabaseService {
     final categories = getCustomCategories();
     categories.remove(category);
     await _settingsBox.put('custom_categories', categories);
+    AutoBackupTrigger.notifyChange('category_removed');
   }
 
   // ═══════════════════════════════════════
-  // MISSED HABIT DIALOG TRACKING
+  // MISSED HABIT DIALOG
   // ═══════════════════════════════════════
 
-  static String getLastMissedDialogDate() {
-    return _settingsBox.get('last_missed_dialog_date', defaultValue: '') as String;
-  }
+  static String getLastMissedDialogDate() =>
+      _settingsBox.get('last_missed_dialog_date', defaultValue: '') as String;
 
   static Future<void> setLastMissedDialogDate(String date) async {
     await _settingsBox.put('last_missed_dialog_date', date);
@@ -1019,10 +1007,6 @@ class DatabaseService {
     return mostCommon;
   }
 
-  // ═══════════════════════════════════════
-  // SMART REMINDER MESSAGES
-  // ═══════════════════════════════════════
-
   static String getSmartReminderMessage(Habit habit) {
     final lastReason = habit.getLastMissedReason();
     return AppConfig.getSmartMessage(lastReason ?? 'default', habit.name);
@@ -1041,6 +1025,7 @@ class DatabaseService {
   static Future<void> setAutoResetTime(TimeOfDay time) async {
     await _settingsBox.put('auto_reset_hour', time.hour);
     await _settingsBox.put('auto_reset_minute', time.minute);
+    AutoBackupTrigger.notifyChange('reset_time_changed');
   }
 
   static bool shouldResetHabitsNow() {
@@ -1082,183 +1067,105 @@ class DatabaseService {
   }
 
   // ═══════════════════════════════════════
-  // 🆕 AUTO BACKUP SETTINGS
+  // AUTO BACKUP SETTINGS
   // ═══════════════════════════════════════
 
-  static bool isAutoBackupEnabled() {
-    return _settingsBox.get('auto_backup_enabled', defaultValue: false) as bool;
-  }
+  static bool isAutoBackupEnabled() =>
+      _settingsBox.get('auto_backup_enabled', defaultValue: true) as bool;
 
   static Future<void> setAutoBackupEnabled(bool enabled) async {
     await _settingsBox.put('auto_backup_enabled', enabled);
   }
 
-  static String getAutoBackupFrequency() {
-    return _settingsBox.get('auto_backup_frequency', defaultValue: 'daily') as String;
-  }
+  static String getAutoBackupFrequency() => _settingsBox.get(
+    'auto_backup_frequency',
+    defaultValue: 'every_change',
+  ) as String;
 
   static Future<void> setAutoBackupFrequency(String frequency) async {
     await _settingsBox.put('auto_backup_frequency', frequency);
   }
 
-  static bool isAutoBackupWifiOnly() {
-    return _settingsBox.get('auto_backup_wifi_only', defaultValue: true) as bool;
-  }
+  static bool isAutoBackupWifiOnly() =>
+      _settingsBox.get('auto_backup_wifi_only', defaultValue: false) as bool;
 
   static Future<void> setAutoBackupWifiOnly(bool wifiOnly) async {
     await _settingsBox.put('auto_backup_wifi_only', wifiOnly);
   }
 
-  static int getLastAutoBackupTime() {
-    return _settingsBox.get('last_auto_backup_time', defaultValue: 0) as int;
-  }
+  static int getLastAutoBackupTime() =>
+      _settingsBox.get('last_auto_backup_time', defaultValue: 0) as int;
 
   static Future<void> setLastAutoBackupTime(int timestampMs) async {
     await _settingsBox.put('last_auto_backup_time', timestampMs);
   }
 
+  static bool hasPendingBackup() =>
+      _settingsBox.get('has_pending_backup', defaultValue: false) as bool;
+
+  static Future<void> setPendingBackup(bool pending) async {
+    await _settingsBox.put('has_pending_backup', pending);
+  }
+
   // ═══════════════════════════════════════
-  // 🧠 PSYCHOLOGY NUDGES SETTING
+  // PSYCHOLOGY NUDGES
   // ═══════════════════════════════════════
 
-  static bool arePsychologyNudgesEnabled() {
-    return _settingsBox.get('psychology_nudges_enabled', defaultValue: true) as bool;
-  }
+  static bool arePsychologyNudgesEnabled() => _settingsBox.get(
+    'psychology_nudges_enabled',
+    defaultValue: true,
+  ) as bool;
 
   static Future<void> setPsychologyNudgesEnabled(bool enabled) async {
     await _settingsBox.put('psychology_nudges_enabled', enabled);
+    AutoBackupTrigger.notifyChange('setting_changed');
   }
 
-  // ═══════════════════════════════════════
-  // PRO / SUBSCRIPTION
-  // ═══════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════
+  // 🌟 PRO / SUBSCRIPTION (VIP REMOVED)
+  // ═══════════════════════════════════════════════════════════
 
-  static bool isProUser() {
-    return _settingsBox.get('is_pro', defaultValue: false) as bool;
-  }
+  static bool isProUser() =>
+      _settingsBox.get('is_pro', defaultValue: false) as bool;
 
   static Future<void> setProUser(bool value) async {
     await _settingsBox.put('is_pro', value);
-    if (value) {
-      await onPremiumUpgrade();
-    }
+    if (value) await onPremiumUpgrade();
   }
 
-  static String getPurchasedPlan() {
-    return _settingsBox.get('purchased_plan', defaultValue: '') as String;
-  }
+  static String getPurchasedPlan() =>
+      _settingsBox.get('purchased_plan', defaultValue: '') as String;
 
   static Future<void> setPurchasedPlan(String planId) async {
     await _settingsBox.put('purchased_plan', planId);
   }
 
-  // ═══════════════════════════════════════
-  // VIP SYSTEM
-  // ═══════════════════════════════════════
+  /// ✅ Backward compatible - now same as isProUser
+  static bool isProOrVipUser() => isProUser();
 
-  static bool isVipUser() {
-    return _settingsBox.get('is_vip', defaultValue: false) as bool;
-  }
-
-  static Future<void> setVipUser(bool value) async {
-    await _settingsBox.put('is_vip', value);
-    if (value) {
-      await onPremiumUpgrade();
-    }
-  }
-
-  static String getVipEmail() {
-    return _settingsBox.get('vip_email', defaultValue: '') as String;
-  }
-
-  static Future<void> setVipEmail(String email) async {
-    await _settingsBox.put('vip_email', email);
-  }
-
-  static int getVipExpiry() {
-    return _settingsBox.get('vip_expiry', defaultValue: 0) as int;
-  }
-
-  static Future<void> setVipExpiry(int timestampMs) async {
-    await _settingsBox.put('vip_expiry', timestampMs);
-  }
-
-  static String getVipDeviceId() {
-    return _settingsBox.get('vip_device_id', defaultValue: '') as String;
-  }
-
-  static Future<void> setVipDeviceId(String deviceId) async {
-    await _settingsBox.put('vip_device_id', deviceId);
-  }
-
-  static bool isVipExpired() {
-    if (!isVipUser()) return true;
-    final expiry = getVipExpiry();
-    if (expiry == 0) return false;
-    return DateTime.now().millisecondsSinceEpoch > expiry;
-  }
-
-  static bool isProOrVipUser() {
-    if (isProUser()) return true;
-
-    if (!isVipUser()) return false;
-
-    final expiry = getVipExpiry();
-    if (expiry == 0) return true;
-
-    final now = DateTime.now().millisecondsSinceEpoch;
-    if (now > expiry) {
-      _settingsBox.put('is_vip', false);
-      debugPrint('⏰ VIP expired, auto-cleared.');
-      return false;
-    }
-
-    return true;
-  }
-
-  static Future<void> clearVipSession() async {
-    await _settingsBox.put('is_vip', false);
-    await _settingsBox.put('vip_email', '');
-    await _settingsBox.put('vip_expiry', 0);
-    await _settingsBox.put('vip_device_id', '');
-    await onPremiumDowngrade();
-    debugPrint('🔓 VIP session cleared.');
-  }
-
-  static String getVipExpiryFormatted() {
-    final expiry = getVipExpiry();
-    if (expiry == 0) return 'Lifetime';
-    try {
-      final date = DateTime.fromMillisecondsSinceEpoch(expiry);
-      return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-    } catch (_) {
-      return 'Unknown';
-    }
-  }
-
-  static int getVipDaysRemaining() {
-    final expiry = getVipExpiry();
-    if (expiry == 0) return 999;
-    final now = DateTime.now().millisecondsSinceEpoch;
-    if (now > expiry) return 0;
-    return ((expiry - now) / (1000 * 60 * 60 * 24)).ceil();
-  }
+  /// ✅ Legacy stubs (always return false/empty - kept for backward compat)
+  static bool isVipUser() => false;
+  static bool isVipExpired() => true;
+  static int getVipExpiry() => 0;
+  static int getVipDaysRemaining() => 0;
+  static String getVipExpiryFormatted() => '';
+  static String getVipEmail() => '';
 
   // ═══════════════════════════════════════
   // PUSH NOTIFICATION TRACKING
   // ═══════════════════════════════════════
 
-  static int getLastSeenNotificationTime() {
-    return _settingsBox.get('last_seen_notification_time', defaultValue: 0) as int;
-  }
+  static int getLastSeenNotificationTime() => _settingsBox.get(
+    'last_seen_notification_time',
+    defaultValue: 0,
+  ) as int;
 
   static Future<void> setLastSeenNotificationTime(int timestampMs) async {
     await _settingsBox.put('last_seen_notification_time', timestampMs);
   }
 
-  static int getLastConfigFetchTime() {
-    return _settingsBox.get('last_config_fetch_time', defaultValue: 0) as int;
-  }
+  static int getLastConfigFetchTime() =>
+      _settingsBox.get('last_config_fetch_time', defaultValue: 0) as int;
 
   static Future<void> setLastConfigFetchTime(int timestampMs) async {
     await _settingsBox.put('last_config_fetch_time', timestampMs);
@@ -1281,33 +1188,32 @@ class DatabaseService {
   // THEME
   // ═══════════════════════════════════════
 
-  static String getThemeMode() {
-    return _settingsBox.get('theme_mode', defaultValue: 'system') as String;
-  }
+  static String getThemeMode() =>
+      _settingsBox.get('theme_mode', defaultValue: 'system') as String;
 
   static Future<void> setThemeMode(String mode) async {
     await _settingsBox.put('theme_mode', mode);
+    AutoBackupTrigger.notifyChange('theme_changed');
   }
 
   // ═══════════════════════════════════════
   // NOTIFICATIONS
   // ═══════════════════════════════════════
 
-  static bool areNotificationsEnabled() {
-    return _settingsBox.get('notifications_enabled', defaultValue: true) as bool;
-  }
+  static bool areNotificationsEnabled() =>
+      _settingsBox.get('notifications_enabled', defaultValue: true) as bool;
 
   static Future<void> setNotifications(bool enabled) async {
     await _settingsBox.put('notifications_enabled', enabled);
+    AutoBackupTrigger.notifyChange('notification_setting_changed');
   }
 
   // ═══════════════════════════════════════
   // ADS
   // ═══════════════════════════════════════
 
-  static int getInterstitialCounter() {
-    return _settingsBox.get('interstitial_counter', defaultValue: 0) as int;
-  }
+  static int getInterstitialCounter() =>
+      _settingsBox.get('interstitial_counter', defaultValue: 0) as int;
 
   static Future<void> incrementInterstitialCounter() async {
     final current = getInterstitialCounter();
@@ -1318,25 +1224,22 @@ class DatabaseService {
     await _settingsBox.put('interstitial_counter', 0);
   }
 
-  static int getSessionInterstitialCount() {
-    return _settingsBox.get('session_interstitial_count', defaultValue: 0) as int;
-  }
+  static int getSessionInterstitialCount() =>
+      _settingsBox.get('session_interstitial_count', defaultValue: 0) as int;
 
   static Future<void> setSessionInterstitialCount(int value) async {
     await _settingsBox.put('session_interstitial_count', value);
   }
 
-  static int getLastInterstitialTime() {
-    return _settingsBox.get('last_interstitial_time', defaultValue: 0) as int;
-  }
+  static int getLastInterstitialTime() =>
+      _settingsBox.get('last_interstitial_time', defaultValue: 0) as int;
 
   static Future<void> setLastInterstitialTime(int value) async {
     await _settingsBox.put('last_interstitial_time', value);
   }
 
-  static int getRewardedExtraHabits() {
-    return _settingsBox.get('rewarded_extra_habits', defaultValue: 0) as int;
-  }
+  static int getRewardedExtraHabits() =>
+      _settingsBox.get('rewarded_extra_habits', defaultValue: 0) as int;
 
   static Future<void> addRewardedExtraHabits(int value) async {
     final current = getRewardedExtraHabits();
@@ -1428,32 +1331,31 @@ class DatabaseService {
   }
 
   // ═══════════════════════════════════════
-  // SOUND & TTS SETTINGS
+  // SOUND & TTS
   // ═══════════════════════════════════════
 
-  static bool areSoundEffectsEnabled() {
-    return _settingsBox.get('sound_effects_enabled', defaultValue: true) as bool;
-  }
+  static bool areSoundEffectsEnabled() =>
+      _settingsBox.get('sound_effects_enabled', defaultValue: true) as bool;
 
   static Future<void> setSoundEffectsEnabled(bool enabled) async {
     await _settingsBox.put('sound_effects_enabled', enabled);
+    AutoBackupTrigger.notifyChange('setting_changed');
   }
 
-  static bool isTtsEnabled() {
-    return _settingsBox.get('tts_enabled', defaultValue: true) as bool;
-  }
+  static bool isTtsEnabled() =>
+      _settingsBox.get('tts_enabled', defaultValue: true) as bool;
 
   static Future<void> setTtsEnabled(bool enabled) async {
     await _settingsBox.put('tts_enabled', enabled);
+    AutoBackupTrigger.notifyChange('setting_changed');
   }
 
   // ═══════════════════════════════════════
   // LEVEL TRACKING
   // ═══════════════════════════════════════
 
-  static int getLastKnownLevel() {
-    return _settingsBox.get('last_known_level', defaultValue: 1) as int;
-  }
+  static int getLastKnownLevel() =>
+      _settingsBox.get('last_known_level', defaultValue: 1) as int;
 
   static Future<void> setLastKnownLevel(int level) async {
     await _settingsBox.put('last_known_level', level);
@@ -1463,81 +1365,76 @@ class DatabaseService {
   // USER PROFILE
   // ═══════════════════════════════════════
 
-  static String getUserGoalType() {
-    return _settingsBox.get('user_goal_type', defaultValue: '') as String;
-  }
+  static String getUserGoalType() =>
+      _settingsBox.get('user_goal_type', defaultValue: '') as String;
 
   static Future<void> setUserGoalType(String type) async {
     await _settingsBox.put('user_goal_type', type);
+    AutoBackupTrigger.notifyChange('profile_changed');
   }
 
-  static String getUserName() {
-    return _settingsBox.get('user_name', defaultValue: 'Habit Hero') as String;
-  }
+  static String getUserName() =>
+      _settingsBox.get('user_name', defaultValue: 'Habit Hero') as String;
 
   static Future<void> setUserName(String name) async {
     await _settingsBox.put('user_name', name);
+    AutoBackupTrigger.notifyChange('profile_changed');
   }
 
-  static String getUserAvatar() {
-    return _settingsBox.get('user_avatar', defaultValue: '🦸') as String;
-  }
+  static String getUserAvatar() =>
+      _settingsBox.get('user_avatar', defaultValue: '🦸') as String;
 
   static Future<void> setUserAvatar(String avatar) async {
     await _settingsBox.put('user_avatar', avatar);
+    AutoBackupTrigger.notifyChange('profile_changed');
   }
 
   // ═══════════════════════════════════════
   // MISC SETTINGS
   // ═══════════════════════════════════════
 
-  static bool isAdSoundMuted() {
-    return _settingsBox.get('ad_sound_muted', defaultValue: true) as bool;
-  }
+  static bool isAdSoundMuted() =>
+      _settingsBox.get('ad_sound_muted', defaultValue: true) as bool;
 
   static Future<void> setAdSoundMuted(bool muted) async {
     await _settingsBox.put('ad_sound_muted', muted);
   }
 
-  static String getDetectedCountryCode() {
-    return _settingsBox.get('detected_country_code', defaultValue: '') as String;
-  }
+  static String getDetectedCountryCode() =>
+      _settingsBox.get('detected_country_code', defaultValue: '') as String;
 
   static Future<void> setDetectedCountryCode(String code) async {
     await _settingsBox.put('detected_country_code', code);
   }
 
-  static bool isFirstLaunch() {
-    return _settingsBox.get('first_launch', defaultValue: true) as bool;
-  }
+  static bool isFirstLaunch() =>
+      _settingsBox.get('first_launch', defaultValue: true) as bool;
 
   static Future<void> setFirstLaunchDone() async {
     await _settingsBox.put('first_launch', false);
   }
 
-  static String getLanguageCode() {
-    return _settingsBox.get(
-      'language_code',
-      defaultValue: AppConfig.defaultAppLanguageCode,
-    ) as String;
-  }
+  static String getLanguageCode() => _settingsBox.get(
+    'language_code',
+    defaultValue: AppConfig.defaultAppLanguageCode,
+  ) as String;
 
   static Future<void> setLanguageCode(String code) async {
     await _settingsBox.put('language_code', code);
+    AutoBackupTrigger.notifyChange('language_changed');
   }
 
-  static bool isDynamicTranslationEnabled() {
-    return _settingsBox.get('dynamic_translation_enabled', defaultValue: false)
-    as bool;
-  }
+  static bool isDynamicTranslationEnabled() => _settingsBox.get(
+    'dynamic_translation_enabled',
+    defaultValue: false,
+  ) as bool;
 
   static Future<void> setDynamicTranslationEnabled(bool enabled) async {
     await _settingsBox.put('dynamic_translation_enabled', enabled);
   }
 
-  static bool areStarterGoalsApplied() {
-    return _settingsBox.get('starter_goals_applied', defaultValue: false) as bool;
-  }
+  static bool areStarterGoalsApplied() =>
+      _settingsBox.get('starter_goals_applied', defaultValue: false) as bool;
 
   static Future<void> setStarterGoalsApplied(bool value) async {
     await _settingsBox.put('starter_goals_applied', value);
@@ -1575,12 +1472,10 @@ class DatabaseService {
   }
 
   static bool isRoutineUnlocked(String routineId) {
-    if (isProOrVipUser()) return true;
-
+    if (isProUser()) return true;
     final expiry =
     _settingsBox.get(_routineUnlockKey(routineId), defaultValue: 0) as int;
     if (expiry == 0) return false;
-
     final now = DateTime.now().millisecondsSinceEpoch;
     return now < expiry;
   }
@@ -1606,64 +1501,46 @@ class DatabaseService {
   }
 
   // ═══════════════════════════════════════
-  // 🆕 AD SYSTEM HELPERS
+  // AD SYSTEM HELPERS
   // ═══════════════════════════════════════
 
   static Future<void> onPremiumUpgrade() async {
     await resetInterstitialCounter();
     await setSessionInterstitialCount(0);
     await setLastInterstitialTime(0);
-
     await _settingsBox.put('rewarded_extra_habits', 0);
-
-    // 🚀 NEW: Update Social Pro status dynamically upon buying premium
     await updateLeaderboardActivityStatus();
-
     debugPrint('🌟 Premium upgrade - ad states cleared');
   }
 
   static Future<void> onPremiumDowngrade() async {
     await resetInterstitialCounter();
     await setSessionInterstitialCount(0);
-
     debugPrint('📉 Premium downgrade - ready for ads');
   }
 
-  static bool get isPremium => isProOrVipUser();
+  static bool get isPremium => isProUser();
 
   static bool canCreateMoreHabits() {
-    if (isProOrVipUser()) return true;
-
+    if (isProUser()) return true;
     final currentCount = getAllHabits().length;
     final extraFromAds = getRewardedExtraHabits();
     final totalAllowed = AppConfig.maxHabitsFree + extraFromAds;
-
     return currentCount < totalAllowed;
   }
 
   static int getRemainingHabitSlots() {
-    if (isProOrVipUser()) return 999;
-
+    if (isProUser()) return 999;
     final currentCount = getAllHabits().length;
     final extraFromAds = getRewardedExtraHabits();
     final totalAllowed = AppConfig.maxHabitsFree + extraFromAds;
-
     return (totalAllowed - currentCount).clamp(0, 999);
   }
 
   static Map<String, dynamic> getPremiumStatus() {
-    final isVip = isVipUser();
-    final isPro = isProUser();
-    final vipExpired = isVipExpired();
-
     return {
-      'isPremium': isProOrVipUser(),
-      'isPro': isPro,
-      'isVip': isVip,
-      'isVipExpired': vipExpired,
-      'vipEmail': getVipEmail(),
-      'vipExpiry': getVipExpiryFormatted(),
-      'vipDaysRemaining': getVipDaysRemaining(),
+      'isPremium': isProUser(),
+      'isPro': isProUser(),
       'purchasedPlan': getPurchasedPlan(),
     };
   }
@@ -1671,19 +1548,12 @@ class DatabaseService {
   static void printPremiumStatus() {
     final status = getPremiumStatus();
     debugPrint('══════════ PREMIUM STATUS ══════════');
-    debugPrint('isPremium: ${status['isPremium']}');
-    debugPrint('isPro: ${status['isPro']}');
-    debugPrint('isVip: ${status['isVip']}');
-    debugPrint('isVipExpired: ${status['isVipExpired']}');
-    debugPrint('vipEmail: ${status['vipEmail']}');
-    debugPrint('vipExpiry: ${status['vipExpiry']}');
-    debugPrint('vipDaysRemaining: ${status['vipDaysRemaining']}');
-    debugPrint('purchasedPlan: ${status['purchasedPlan']}');
+    status.forEach((k, v) => debugPrint('$k: $v'));
     debugPrint('════════════════════════════════════');
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // 📝 NOTES BACKUP INTEGRATION
+  // NOTES BACKUP INTEGRATION
   // ═══════════════════════════════════════════════════════════════
 
   static Future<Map<String, dynamic>> getNotesBackupData() async {

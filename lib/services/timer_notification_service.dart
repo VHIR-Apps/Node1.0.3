@@ -4,26 +4,30 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
-// ═══════════════════════════════════════
-// TIMER NOTIFICATION SERVICE
-// ═══════════════════════════════════════
-// Shows persistent notification with timer countdown
-// Updates every second while timer is running
-
 class TimerNotificationService {
   static final FlutterLocalNotificationsPlugin _notifications =
   FlutterLocalNotificationsPlugin();
 
   static bool _isInitialized = false;
-  static Timer? _updateTimer;
 
-  // Notification IDs
+  // ═══════════════════════════════════════
+  // NOTIFICATION IDs
+  // ═══════════════════════════════════════
   static const int _timerNotificationId = 9999;
   static const int _completionNotificationId = 9998;
 
-  // Channel IDs
+  // ═══════════════════════════════════════
+  // CHANNEL IDs
+  // ═══════════════════════════════════════
   static const String _timerChannelId = 'pomodoro_timer';
   static const String _completionChannelId = 'pomodoro_complete';
+
+  // ═══════════════════════════════════════
+  // 🚀 PUBLIC PAYLOAD CONSTANTS
+  // main.dart এই same value চেক করে routing করবে
+  // ═══════════════════════════════════════
+  static const String payloadTimer = 'pomodoro_timer_active';
+  static const String payloadComplete = 'pomodoro_session_complete';
 
   // ═══════════════════════════════════════
   // INITIALIZE
@@ -31,24 +35,10 @@ class TimerNotificationService {
   static Future<void> init() async {
     if (_isInitialized) return;
 
-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const iosSettings = DarwinInitializationSettings(
-      requestAlertPermission: false,
-      requestBadgePermission: false,
-      requestSoundPermission: false,
-    );
+    // ✅ এই plugin-এর initialize handler set করছি না
+    // কারণ NotificationService এই একই plugin instance initialize করে
+    // এবং সব tap handle করে main.dart-এ pass করে
 
-    const initSettings = InitializationSettings(
-      android: androidSettings,
-      iOS: iosSettings,
-    );
-
-    await _notifications.initialize(
-      initSettings,
-      onDidReceiveNotificationResponse: _onNotificationTapped,
-    );
-
-    // Create notification channels
     await _createNotificationChannels();
 
     _isInitialized = true;
@@ -91,14 +81,6 @@ class TimerNotificationService {
   }
 
   // ═══════════════════════════════════════
-  // NOTIFICATION TAP HANDLER
-  // ═══════════════════════════════════════
-  static void _onNotificationTapped(NotificationResponse response) {
-    debugPrint('🔔 Timer notification tapped: ${response.payload}');
-    // App will open automatically
-  }
-
-  // ═══════════════════════════════════════
   // SHOW TIMER NOTIFICATION
   // ═══════════════════════════════════════
   static Future<void> showTimerNotification({
@@ -130,25 +112,6 @@ class TimerNotificationService {
         contentTitle: '$stateEmoji $title',
         summaryText: isRunning ? 'Timer running...' : 'Timer paused',
       ),
-      actions: [
-        if (isRunning)
-          const AndroidNotificationAction(
-            'pause',
-            '⏸️ Pause',
-            showsUserInterface: true,
-          )
-        else
-          const AndroidNotificationAction(
-            'resume',
-            '▶️ Resume',
-            showsUserInterface: true,
-          ),
-        const AndroidNotificationAction(
-          'stop',
-          '⏹️ Stop',
-          showsUserInterface: true,
-        ),
-      ],
     );
 
     const iosDetails = DarwinNotificationDetails(
@@ -167,12 +130,12 @@ class TimerNotificationService {
       '$stateEmoji $title',
       '⏱️ $timeText remaining',
       details,
-      payload: 'timer',
+      payload: payloadTimer, // 🚀 'pomodoro_timer_active'
     );
   }
 
   // ═══════════════════════════════════════
-  // UPDATE NOTIFICATION (Called every second)
+  // UPDATE NOTIFICATION
   // ═══════════════════════════════════════
   static Future<void> updateTimerNotification({
     required String title,
@@ -181,7 +144,8 @@ class TimerNotificationService {
   }) async {
     final minutes = remainingSeconds ~/ 60;
     final seconds = remainingSeconds % 60;
-    final timeText = '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+    final timeText =
+        '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
 
     String stateEmoji = '🍅';
     if (title.contains('Focus')) {
@@ -211,7 +175,6 @@ class TimerNotificationService {
   }) async {
     if (!_isInitialized) await init();
 
-    // Cancel timer notification first
     await cancelTimerNotification();
 
     final androidDetails = AndroidNotificationDetails(
@@ -225,7 +188,8 @@ class TimerNotificationService {
       category: AndroidNotificationCategory.alarm,
       visibility: NotificationVisibility.public,
       colorized: true,
-      color: isFocusComplete ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+      color:
+      isFocusComplete ? const Color(0xFF10B981) : const Color(0xFFEF4444),
       styleInformation: BigTextStyleInformation(
         body,
         contentTitle: title,
@@ -248,21 +212,18 @@ class TimerNotificationService {
       title,
       body,
       details,
-      payload: 'complete',
+      payload: payloadComplete, // 🚀 'pomodoro_session_complete'
     );
   }
 
   // ═══════════════════════════════════════
-  // CANCEL TIMER NOTIFICATION
+  // CANCEL
   // ═══════════════════════════════════════
   static Future<void> cancelTimerNotification() async {
     await _notifications.cancel(_timerNotificationId);
     debugPrint('🔕 Timer notification cancelled');
   }
 
-  // ═══════════════════════════════════════
-  // CANCEL ALL NOTIFICATIONS
-  // ═══════════════════════════════════════
   static Future<void> cancelAll() async {
     await _notifications.cancel(_timerNotificationId);
     await _notifications.cancel(_completionNotificationId);
@@ -270,16 +231,12 @@ class TimerNotificationService {
   }
 
   // ═══════════════════════════════════════
-  // GET COLOR FOR STATE
+  // GET COLOR
   // ═══════════════════════════════════════
   static Color _getColorForState(String title) {
-    if (title.contains('Focus')) {
-      return const Color(0xFFEF4444); // Red
-    } else if (title.contains('Short')) {
-      return const Color(0xFF10B981); // Green
-    } else if (title.contains('Long')) {
-      return const Color(0xFF3B82F6); // Blue
-    }
-    return const Color(0xFF6B7280); // Gray
+    if (title.contains('Focus')) return const Color(0xFFEF4444);
+    if (title.contains('Short')) return const Color(0xFF10B981);
+    if (title.contains('Long')) return const Color(0xFF3B82F6);
+    return const Color(0xFF6B7280);
   }
 }
