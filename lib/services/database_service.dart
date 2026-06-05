@@ -21,12 +21,9 @@ class DatabaseService {
   static const String notificationsBox = 'notifications';
   static const String studySessionsBox = 'study_sessions';
   static const String routinesBox = 'study_routines';
-
   static const String studyTargetsBox = 'study_targets';
   static const String dailyStudyRoutinesBox = 'daily_study_routines';
-
   static const String _kDefaultStudyTargetId = 'default_study_target';
-
   static const String leaderboardProfileBox = 'leaderboard_profile';
   static const String _kLeaderboardLastUid = 'leaderboard_last_uid';
 
@@ -44,6 +41,10 @@ class DatabaseService {
   static bool _studyTargetsOpenAttemptInProgress = false;
   static bool _dailyRoutinesOpenAttemptInProgress = false;
 
+  // ✅ Throttle state
+  static DateTime? _lastCloudSyncTime;
+  static bool _cloudSyncInProgress = false;
+
   static Future<void> init() async {
     _habitsBox = await Hive.openBox<Habit>(habitsBox);
     _settingsBox = await Hive.openBox(settingsBox);
@@ -54,8 +55,6 @@ class DatabaseService {
     await _openLeaderboardBoxSafely();
     await _openStudyTargetsBoxSafely();
     await _openDailyStudyRoutinesBoxSafely();
-
-    // 🗑️ Legacy VIP cleanup (one time)
     await _cleanupLegacyVipKeys();
 
     if (!_settingsBox.containsKey('ad_sound_muted')) {
@@ -92,22 +91,13 @@ class DatabaseService {
       await _settingsBox.put('last_config_fetch_time', 0);
     }
     if (!_settingsBox.containsKey('pomodoro_focus_mins')) {
-      await _settingsBox.put(
-        'pomodoro_focus_mins',
-        AppConfig.defaultFocusMinutes,
-      );
+      await _settingsBox.put('pomodoro_focus_mins', AppConfig.defaultFocusMinutes);
     }
     if (!_settingsBox.containsKey('pomodoro_short_break_mins')) {
-      await _settingsBox.put(
-        'pomodoro_short_break_mins',
-        AppConfig.defaultShortBreakMinutes,
-      );
+      await _settingsBox.put('pomodoro_short_break_mins', AppConfig.defaultShortBreakMinutes);
     }
     if (!_settingsBox.containsKey('pomodoro_long_break_mins')) {
-      await _settingsBox.put(
-        'pomodoro_long_break_mins',
-        AppConfig.defaultLongBreakMinutes,
-      );
+      await _settingsBox.put('pomodoro_long_break_mins', AppConfig.defaultLongBreakMinutes);
     }
     if (!_settingsBox.containsKey('custom_study_subjects')) {
       await _settingsBox.put('custom_study_subjects', <String>[]);
@@ -127,18 +117,12 @@ class DatabaseService {
     if (!_settingsBox.containsKey(_kLeaderboardLastUid)) {
       await _settingsBox.put(_kLeaderboardLastUid, '');
     }
-
-    // ═══════════════════════════════════════════════════════════
-    // 🚀 AUTO BACKUP SETTINGS - DEFAULTS
-    // ═══════════════════════════════════════════════════════════
-
     if (!_settingsBox.containsKey('auto_backup_enabled')) {
       await _settingsBox.put('auto_backup_enabled', true);
     }
     if (!_settingsBox.containsKey('auto_backup_frequency')) {
       await _settingsBox.put('auto_backup_frequency', 'every_change');
     }
-    // ✅ Default: WiFi + Mobile Data দুটোই
     if (!_settingsBox.containsKey('auto_backup_wifi_only')) {
       await _settingsBox.put('auto_backup_wifi_only', false);
     }
@@ -148,9 +132,30 @@ class DatabaseService {
     if (!_settingsBox.containsKey('has_pending_backup')) {
       await _settingsBox.put('has_pending_backup', false);
     }
-
     if (!_settingsBox.containsKey('psychology_nudges_enabled')) {
       await _settingsBox.put('psychology_nudges_enabled', true);
+    }
+  }
+
+  // ═══════════════════════════════════════
+  // ✅ GENERIC SETTINGS GETTER / SETTER
+  // ═══════════════════════════════════════
+
+  static T getSettingsValue<T>(String key, {required T defaultValue}) {
+    try {
+      final v = _settingsBox.get(key, defaultValue: defaultValue);
+      if (v is T) return v;
+      return defaultValue;
+    } catch (_) {
+      return defaultValue;
+    }
+  }
+
+  static Future<void> setSettingsValue<T>(String key, T value) async {
+    try {
+      await _settingsBox.put(key, value);
+    } catch (e) {
+      debugPrint('⚠️ setSettingsValue error: $e');
     }
   }
 
@@ -159,13 +164,7 @@ class DatabaseService {
   // ─────────────────────────────────────────────
 
   static Future<void> _cleanupLegacyVipKeys() async {
-    const legacyKeys = [
-      'is_vip',
-      'vip_email',
-      'vip_expiry',
-      'vip_device_id',
-    ];
-
+    const legacyKeys = ['is_vip', 'vip_email', 'vip_expiry', 'vip_device_id'];
     for (final key in legacyKeys) {
       if (_settingsBox.containsKey(key)) {
         try {
@@ -194,7 +193,6 @@ class DatabaseService {
     final box = _leaderboardProfileBox;
     if (box != null && box.isOpen) return box;
     if (_leaderboardOpenAttemptInProgress) return _leaderboardProfileBox;
-
     _leaderboardOpenAttemptInProgress = true;
     try {
       await _openLeaderboardBoxSafely();
@@ -224,7 +222,6 @@ class DatabaseService {
     final box = _studyTargetsBox;
     if (box != null && box.isOpen) return box;
     if (_studyTargetsOpenAttemptInProgress) return _studyTargetsBox;
-
     _studyTargetsOpenAttemptInProgress = true;
     try {
       await _openStudyTargetsBoxSafely();
@@ -255,7 +252,6 @@ class DatabaseService {
     final box = _dailyStudyRoutinesBox;
     if (box != null && box.isOpen) return box;
     if (_dailyRoutinesOpenAttemptInProgress) return _dailyStudyRoutinesBox;
-
     _dailyRoutinesOpenAttemptInProgress = true;
     try {
       await _openDailyStudyRoutinesBoxSafely();
@@ -286,11 +282,9 @@ class DatabaseService {
     final safeEmoji = (p.avatarEmoji.trim().isEmpty)
         ? '🙂'
         : LeaderboardProfileModel.safeEmoji(p.avatarEmoji);
-
     final joinedAtMs = (p.joinedAtMs > 0)
         ? p.joinedAtMs
         : p.createdAt.toUtc().millisecondsSinceEpoch;
-
     final fixedAvatarIndex = p.avatarIndex < 0 ? 0 : p.avatarIndex;
     final fixedThemeIndex = p.profileThemeIndex < 0 ? 0 : p.profileThemeIndex;
 
@@ -338,12 +332,9 @@ class DatabaseService {
     try {
       final box = _leaderboardProfileBox;
       if (box == null || !box.isOpen) return null;
-
       final p = box.get(uid);
       if (p == null) return null;
-
       final normalized = _normalizeLeaderboardProfile(p);
-
       if (!identical(normalized, p)) {
         Future.microtask(() async {
           try {
@@ -351,7 +342,6 @@ class DatabaseService {
           } catch (_) {}
         });
       }
-
       return normalized;
     } catch (e) {
       debugPrint('⚠️ getLeaderboardProfileForUid error: $e');
@@ -373,15 +363,11 @@ class DatabaseService {
       LeaderboardProfileModel profile) async {
     try {
       if (profile.uid.trim().isEmpty) return;
-
       final box = await _ensureLeaderboardBox();
       if (box == null || !box.isOpen) return;
-
       final normalized = _normalizeLeaderboardProfile(profile);
-
       await box.put(normalized.uid, normalized);
       await setLeaderboardLastUid(normalized.uid);
-
       AutoBackupTrigger.notifyChange('profile_updated');
     } catch (e) {
       debugPrint('⚠️ saveLeaderboardProfile error: $e');
@@ -392,13 +378,9 @@ class DatabaseService {
     try {
       final box = await _ensureLeaderboardBox();
       if (box == null || !box.isOpen) return;
-
       await box.delete(uid);
-
       final last = getLeaderboardLastUid();
-      if (last == uid) {
-        await setLeaderboardLastUid('');
-      }
+      if (last == uid) await setLeaderboardLastUid('');
     } catch (e) {
       debugPrint('⚠️ clearLeaderboardProfileForUid error: $e');
     }
@@ -432,13 +414,10 @@ class DatabaseService {
   static Future<void> updateLeaderboardActivityStatus() async {
     final uid = getLeaderboardLastUid();
     if (uid.isEmpty) return;
-
     final p = getLeaderboardProfileForUid(uid);
     if (p == null) return;
-
     p.lastActiveMs = DateTime.now().toUtc().millisecondsSinceEpoch;
     p.isProUser = isProUser();
-
     await saveLeaderboardProfile(p);
   }
 
@@ -447,25 +426,244 @@ class DatabaseService {
     if (uid.isEmpty) return;
     final p = getLeaderboardProfileForUid(uid);
     if (p == null) return;
-
     final post = {
       'id': DateTime.now().millisecondsSinceEpoch.toString(),
       'text': text.trim(),
       'timestamp': DateTime.now().toUtc().millisecondsSinceEpoch,
     };
-
     p.posts.insert(0, post);
     if (p.posts.length > 20) p.posts = p.posts.sublist(0, 20);
-
     await saveLeaderboardProfile(p);
-
     if (p.isOptedIn) {
       try {
         await LeaderboardService.instance.syncMyProfileToCloud();
       } catch (_) {}
     }
-
     AutoBackupTrigger.notifyChange('post_added');
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // ✅ DAILY SCORE UPDATE SYSTEM — দিনে একবার
+  // ═══════════════════════════════════════════════════════════
+
+  /// App open বা leaderboard load এ call করো
+  /// দিনে একবার weekly score update করবে
+  static Future<void> updateLeaderboardDailyScoreIfNeeded() async {
+    try {
+      final uid = getLeaderboardLastUid();
+      if (uid.isEmpty) return;
+
+      final profile = getLeaderboardProfileForUid(uid);
+      if (profile == null || !profile.isOptedIn) return;
+
+      final nowMs = DateTime.now().toUtc().millisecondsSinceEpoch;
+      final oneDayMs = 24 * 60 * 60 * 1000;
+      final oneWeekMs = 7 * oneDayMs;
+      final todayStr = _toDateStr(DateTime.now());
+
+      // আজকে already update হয়েছে কিনা check
+      final lastUpdateStr = getSettingsValue<String>(
+        'leaderboard_last_daily_update',
+        defaultValue: '',
+      );
+
+      bool needsSave = false;
+
+      // ✅ Daily reset check
+      if (profile.lastDailyResetMs > 0 &&
+          (nowMs - profile.lastDailyResetMs) >= oneDayMs) {
+        debugPrint('🔄 Daily score reset triggered');
+        profile.dailyScore = 0;
+        profile.lastDailyResetMs = nowMs;
+        needsSave = true;
+      }
+      if (profile.lastDailyResetMs <= 0) {
+        profile.lastDailyResetMs = nowMs;
+        needsSave = true;
+      }
+
+      // ✅ Weekly reset check — warning এর আগে last score save করো
+      if (profile.lastWeeklyResetMs > 0 &&
+          (nowMs - profile.lastWeeklyResetMs) >= oneWeekMs) {
+        debugPrint('🔄 Weekly score reset triggered');
+
+        // Last weekly score save করো (history দেখানোর জন্য)
+        if (profile.weeklyScore > 0) {
+          await setSettingsValue(
+            'leaderboard_last_weekly_score',
+            profile.weeklyScore.toString(),
+          );
+          debugPrint('💾 Last weekly score saved: ${profile.weeklyScore}');
+        }
+
+        profile.weeklyScore = 0;
+        profile.lastWeeklyResetMs = nowMs;
+        needsSave = true;
+      }
+      if (profile.lastWeeklyResetMs <= 0) {
+        profile.lastWeeklyResetMs = nowMs;
+        needsSave = true;
+      }
+
+      // ✅ দিনে একবার — আজকের study minutes দিয়ে score update
+      if (lastUpdateStr != todayStr) {
+        final todayMins = getTotalStudyMinutesToday();
+
+        if (todayMins > 0) {
+          // আগের দিনের saved points
+          final prevPoints = getSettingsValue<int>(
+            'leaderboard_today_points',
+            defaultValue: 0,
+          );
+
+          // আজকের points (1 min = 1 XP)
+          final todayPoints = todayMins;
+
+          // Daily score = আজকের মোট
+          profile.dailyScore = todayPoints;
+
+          // Weekly score এ diff যোগ করো
+          final diff = todayPoints - prevPoints;
+          if (diff > 0) {
+            profile.weeklyScore = (profile.weeklyScore + diff).clamp(0, 9999999);
+          }
+
+          profile.lastActiveMs = nowMs;
+          needsSave = true;
+
+          // Save করো
+          await setSettingsValue('leaderboard_today_points', todayPoints);
+          await setSettingsValue('leaderboard_last_daily_update', todayStr);
+
+          debugPrint(
+            '📊 Leaderboard score updated: '
+                'today=$todayPoints | diff=$diff | '
+                'weekly=${profile.weeklyScore}',
+          );
+        } else {
+          // আজকে কিছু পড়েনি কিন্তু date update করো
+          await setSettingsValue('leaderboard_last_daily_update', todayStr);
+          await setSettingsValue('leaderboard_today_points', 0);
+        }
+      }
+
+      if (needsSave) {
+        await saveLeaderboardProfile(profile);
+        // Throttled cloud sync
+        await _syncToCloudThrottled();
+      }
+    } catch (e) {
+      debugPrint('⚠️ updateLeaderboardDailyScoreIfNeeded error: $e');
+    }
+  }
+
+  /// ✅ Throttled Cloud Sync — 4 ঘণ্টায় একবার max
+  static Future<void> _syncToCloudThrottled() async {
+    final now = DateTime.now();
+
+    if (_lastCloudSyncTime != null &&
+        now.difference(_lastCloudSyncTime!).inHours < 4) {
+      debugPrint('⏳ Cloud sync throttled (4h gap required)');
+      return;
+    }
+
+    if (_cloudSyncInProgress) {
+      debugPrint('⏳ Cloud sync already in progress');
+      return;
+    }
+
+    _cloudSyncInProgress = true;
+    try {
+      await LeaderboardService.instance.syncMyProfileToCloud();
+      _lastCloudSyncTime = now;
+      debugPrint('☁️ Throttled cloud sync done at $now');
+    } catch (e) {
+      debugPrint('⚠️ Throttled cloud sync failed: $e');
+    } finally {
+      _cloudSyncInProgress = false;
+    }
+  }
+
+  /// ✅ Force sync (manual button press এ)
+  static Future<void> forceSyncToCloud() async {
+    if (_cloudSyncInProgress) return;
+    _cloudSyncInProgress = true;
+    try {
+      await LeaderboardService.instance.syncMyProfileToCloud();
+      _lastCloudSyncTime = DateTime.now();
+      debugPrint('☁️ Force cloud sync done');
+    } catch (e) {
+      debugPrint('⚠️ Force cloud sync failed: $e');
+    } finally {
+      _cloudSyncInProgress = false;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // ✅ YESTERDAY SNAPSHOT SYSTEM
+  // ═══════════════════════════════════════════════════════════
+
+  /// App open এ call করো — গতকালের data snapshot নেয়
+  static Future<void> snapshotYesterdayIfNeeded() async {
+    try {
+      final todayStr = _toDateStr(DateTime.now());
+      final lastSnapshotDate = getSettingsValue<String>(
+        'last_yesterday_snapshot_date',
+        defaultValue: '',
+      );
+
+      if (lastSnapshotDate == todayStr) return;
+
+      final yesterday = DateTime.now().subtract(const Duration(days: 1));
+      final yesterdayStr = _toDateStr(yesterday);
+      final yesterdayMins = getStudyMinutesForDate(yesterdayStr);
+
+      await setSettingsValue('yesterday_snapshot_date', yesterdayStr);
+      await setSettingsValue('yesterday_snapshot_minutes', yesterdayMins);
+      await setSettingsValue('last_yesterday_snapshot_date', todayStr);
+
+      final subjectBreakdown = getYesterdayStudyTimeBySubject();
+      final encoded =
+      subjectBreakdown.entries.map((e) => '${e.key}:${e.value}').join(',');
+      await setSettingsValue('yesterday_snapshot_subjects', encoded);
+
+      debugPrint(
+        '📸 Yesterday snapshot saved: $yesterdayStr = $yesterdayMins mins',
+      );
+    } catch (e) {
+      debugPrint('⚠️ snapshotYesterdayIfNeeded error: $e');
+    }
+  }
+
+  static int getYesterdaySnapshotMinutes() {
+    return getSettingsValue<int>(
+      'yesterday_snapshot_minutes',
+      defaultValue: 0,
+    );
+  }
+
+  static String getYesterdaySnapshotDate() {
+    return getSettingsValue<String>(
+      'yesterday_snapshot_date',
+      defaultValue: '',
+    );
+  }
+
+  static Map<String, int> getYesterdaySnapshotSubjects() {
+    final encoded = getSettingsValue<String>(
+      'yesterday_snapshot_subjects',
+      defaultValue: '',
+    );
+    if (encoded.isEmpty) return {};
+    final map = <String, int>{};
+    for (final part in encoded.split(',')) {
+      final idx = part.lastIndexOf(':');
+      if (idx == -1) continue;
+      final subject = part.substring(0, idx);
+      final mins = int.tryParse(part.substring(idx + 1)) ?? 0;
+      if (subject.isNotEmpty) map[subject] = mins;
+    }
+    return map;
   }
 
   // ═══════════════════════════════════════
@@ -482,9 +680,7 @@ class DatabaseService {
       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
   }
 
-  static StudyRoutine? getRoutineById(String id) {
-    return _routinesBox.get(id);
-  }
+  static StudyRoutine? getRoutineById(String id) => _routinesBox.get(id);
 
   static Future<void> updateRoutine(StudyRoutine routine) async {
     await _routinesBox.put(routine.id, routine);
@@ -537,14 +733,11 @@ class DatabaseService {
       createdAt: now,
       updatedAt: now,
     );
-
     try {
       final box = await _ensureStudyTargetsBox();
       if (box == null || !box.isOpen) return fallback;
-
       final existing = box.get(_kDefaultStudyTargetId);
       if (existing != null) return existing;
-
       await box.put(_kDefaultStudyTargetId, fallback);
       return fallback;
     } catch (e) {
@@ -557,7 +750,6 @@ class DatabaseService {
     try {
       final box = await _ensureStudyTargetsBox();
       if (box == null || !box.isOpen) return;
-
       final updated = target.copyWith(updatedAt: DateTime.now());
       await box.put(_kDefaultStudyTargetId, updated);
       AutoBackupTrigger.notifyChange('study_target_saved');
@@ -591,7 +783,6 @@ class DatabaseService {
     try {
       final now = DateTime.now();
       final map = <String, int>{};
-
       for (final s in getFocusSessionsOnly()) {
         if (now.difference(s.completedAt).inDays <= 7) {
           map[s.subjectName] = (map[s.subjectName] ?? 0) + s.durationMinutes;
@@ -612,7 +803,6 @@ class DatabaseService {
     try {
       final box = _dailyStudyRoutinesBox;
       if (box == null || !box.isOpen) return <DailyStudyRoutine>[];
-
       final all = box.values.toList();
       all.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
       return all;
@@ -657,15 +847,12 @@ class DatabaseService {
     }
   }
 
-  static Future<void> setDailyStudyRoutineActive(String id, bool active) async {
+  static Future<void> setDailyStudyRoutineActive(
+      String id, bool active) async {
     try {
       final r = getDailyStudyRoutineById(id);
       if (r == null) return;
-
-      final updated = r.copyWith(
-        isActive: active,
-        updatedAt: DateTime.now(),
-      );
+      final updated = r.copyWith(isActive: active, updatedAt: DateTime.now());
       await saveDailyStudyRoutine(updated);
     } catch (e) {
       debugPrint('⚠️ setDailyStudyRoutineActive error: $e');
@@ -709,14 +896,15 @@ class DatabaseService {
   }
 
   // ═══════════════════════════════════════
-  // 🍅 STUDY MODE METHODS
+  // 🍅 STUDY SESSION CORE
   // ═══════════════════════════════════════
 
   static Future<void> saveStudySession(StudySession session) async {
     await _studySessionsBox.put(session.id, session);
 
     final today = DateTime.now().toString().split(' ')[0];
-    final lastStudyDate = _settingsBox.get('last_study_date', defaultValue: '');
+    final lastStudyDate =
+    _settingsBox.get('last_study_date', defaultValue: '');
 
     if (lastStudyDate != today && session.sessionType == 'focus') {
       final yesterday = DateTime.now()
@@ -742,7 +930,69 @@ class DatabaseService {
       }
     }
 
+    // ✅ Focus session complete হলে leaderboard score realtime update
+    if (session.sessionType == 'focus' && session.durationMinutes > 0) {
+      await _updateScoreOnSessionComplete(session.durationMinutes);
+    }
+
     AutoBackupTrigger.notifyChange('study_session_saved');
+  }
+
+  /// ✅ Pomodoro complete হলে real-time score update
+  static Future<void> _updateScoreOnSessionComplete(int minutes) async {
+    try {
+      final uid = getLeaderboardLastUid();
+      if (uid.isEmpty) return;
+
+      final profile = getLeaderboardProfileForUid(uid);
+      if (profile == null || !profile.isOptedIn) return;
+
+      final nowMs = DateTime.now().toUtc().millisecondsSinceEpoch;
+      final oneDayMs = 24 * 60 * 60 * 1000;
+      final oneWeekMs = 7 * oneDayMs;
+
+      // Reset checks
+      if (profile.lastDailyResetMs > 0 &&
+          (nowMs - profile.lastDailyResetMs) >= oneDayMs) {
+        profile.dailyScore = 0;
+        profile.lastDailyResetMs = nowMs;
+      }
+      if (profile.lastDailyResetMs <= 0) {
+        profile.lastDailyResetMs = nowMs;
+      }
+
+      if (profile.lastWeeklyResetMs > 0 &&
+          (nowMs - profile.lastWeeklyResetMs) >= oneWeekMs) {
+        if (profile.weeklyScore > 0) {
+          await setSettingsValue(
+            'leaderboard_last_weekly_score',
+            profile.weeklyScore.toString(),
+          );
+        }
+        profile.weeklyScore = 0;
+        profile.lastWeeklyResetMs = nowMs;
+      }
+      if (profile.lastWeeklyResetMs <= 0) {
+        profile.lastWeeklyResetMs = nowMs;
+      }
+
+      // ✅ Score আপডেট — today total minutes দিয়ে
+      final todayMins = getTotalStudyMinutesToday();
+      profile.dailyScore = todayMins;
+
+      // Weekly score এ আজকের session যোগ করো
+      profile.weeklyScore = (profile.weeklyScore + minutes).clamp(0, 9999999);
+      profile.lastActiveMs = nowMs;
+
+      await saveLeaderboardProfile(profile);
+
+      debugPrint(
+        '🎯 Session complete score: +$minutes min | '
+            'daily=${profile.dailyScore} | weekly=${profile.weeklyScore}',
+      );
+    } catch (e) {
+      debugPrint('⚠️ _updateScoreOnSessionComplete error: $e');
+    }
   }
 
   static List<StudySession> getAllStudySessions() =>
@@ -754,29 +1004,66 @@ class DatabaseService {
         .toList();
   }
 
-  static int getTotalStudyMinutesToday() {
-    final today = DateTime.now().toString().split(' ')[0];
+  // ═══════════════════════════════════════════════════════════
+  // 📊 DAILY FOCUS TIME — CORE METHODS
+  // ═══════════════════════════════════════════════════════════
+
+  /// ✅ Helper: 'yyyy-MM-dd' format
+  static String _toDateStr(DateTime dt) {
+    final y = dt.year.toString().padLeft(4, '0');
+    final m = dt.month.toString().padLeft(2, '0');
+    final d = dt.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
+  }
+
+  /// নির্দিষ্ট date এর focus minutes
+  static int getStudyMinutesForDate(String dateStr) {
     int total = 0;
-    for (var session in getFocusSessionsOnly()) {
-      final dateStr = session.completedAt.toString().split(' ')[0];
-      if (dateStr == today) {
-        total += session.durationMinutes;
+    for (final s in getFocusSessionsOnly()) {
+      if (_toDateStr(s.completedAt) == dateStr) {
+        total += s.durationMinutes;
       }
     }
     return total;
   }
 
+  /// আজকের মোট focus minutes
+  static int getTotalStudyMinutesToday() {
+    return getStudyMinutesForDate(_toDateStr(DateTime.now()));
+  }
+
+  /// গতকালের মোট focus minutes
+  static int getTotalStudyMinutesYesterday() {
+    final yesterday = DateTime.now().subtract(const Duration(days: 1));
+    return getStudyMinutesForDate(_toDateStr(yesterday));
+  }
+
+  /// এই সপ্তাহের মোট focus minutes (last 7 days)
   static int getTotalStudyMinutesThisWeek() {
     final now = DateTime.now();
     int total = 0;
     for (var session in getFocusSessionsOnly()) {
-      if (now.difference(session.completedAt).inDays <= 7) {
+      if (now.difference(session.completedAt).inDays < 7) {
         total += session.durationMinutes;
       }
     }
     return total;
   }
 
+  /// এই মাসের মোট focus minutes
+  static int getTotalStudyMinutesThisMonth() {
+    final now = DateTime.now();
+    int total = 0;
+    for (final s in getFocusSessionsOnly()) {
+      final d = s.completedAt;
+      if (d.year == now.year && d.month == now.month) {
+        total += s.durationMinutes;
+      }
+    }
+    return total;
+  }
+
+  /// সর্বকালের মোট focus minutes
   static int getTotalStudyMinutesAllTime() {
     int total = 0;
     for (var session in getFocusSessionsOnly()) {
@@ -785,6 +1072,97 @@ class DatabaseService {
     return total;
   }
 
+  // ═══════════════════════════════════════════════════════════
+  // 📈 DAILY FOCUS TIME — ANALYTICS
+  // ═══════════════════════════════════════════════════════════
+
+  /// Last N days এর প্রতিদিনের data
+  static List<Map<String, dynamic>> getLastNDaysStudyData(int days) {
+    final now = DateTime.now();
+    final result = <Map<String, dynamic>>[];
+    const weekDayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+    for (int i = days - 1; i >= 0; i--) {
+      final day = now.subtract(Duration(days: i));
+      final dateStr = _toDateStr(day);
+      final mins = getStudyMinutesForDate(dateStr);
+
+      String label;
+      if (i == 0) {
+        label = 'Today';
+      } else if (i == 1) {
+        label = 'Yesterday';
+      } else {
+        label = weekDayLabels[day.weekday - 1];
+      }
+
+      result.add({
+        'date': dateStr,
+        'minutes': mins,
+        'label': label,
+        'isToday': i == 0,
+        'isYesterday': i == 1,
+        'weekday': day.weekday,
+        'dayNumber': day.day,
+        'month': day.month,
+      });
+    }
+    return result;
+  }
+
+  /// All days data map (heatmap এর জন্য)
+  static Map<String, int> getAllDailyStudyMinutesMap() {
+    final map = <String, int>{};
+    for (final s in getFocusSessionsOnly()) {
+      final dateStr = _toDateStr(s.completedAt);
+      map[dateStr] = (map[dateStr] ?? 0) + s.durationMinutes;
+    }
+    return map;
+  }
+
+  /// Best single day focus minutes
+  static int getBestDayFocusMinutes() {
+    final map = getAllDailyStudyMinutesMap();
+    if (map.isEmpty) return 0;
+    return map.values.reduce((a, b) => a > b ? a : b);
+  }
+
+  /// Best day date
+  static String getBestDayDate() {
+    final map = getAllDailyStudyMinutesMap();
+    if (map.isEmpty) return '';
+    String bestDate = '';
+    int bestMins = 0;
+    map.forEach((date, mins) {
+      if (mins > bestMins) {
+        bestMins = mins;
+        bestDate = date;
+      }
+    });
+    return bestDate;
+  }
+
+  /// Average daily focus minutes
+  static double getAverageDailyFocusMinutes({int days = 7}) {
+    final data = getLastNDaysStudyData(days);
+    if (data.isEmpty) return 0;
+    final total = data.fold<int>(0, (sum, d) => sum + (d['minutes'] as int));
+    return total / data.length;
+  }
+
+  /// Active study days count
+  static int getActiveDaysCount() {
+    final map = getAllDailyStudyMinutesMap();
+    return map.values.where((m) => m > 0).length;
+  }
+
+  /// এই সপ্তাহে active days
+  static int getActiveDaysThisWeek() {
+    final data = getLastNDaysStudyData(7);
+    return data.where((d) => (d['minutes'] as int) > 0).length;
+  }
+
+  /// Subject wise study time
   static Map<String, int> getStudyTimeBySubject() {
     final map = <String, int>{};
     for (var session in getFocusSessionsOnly()) {
@@ -794,11 +1172,135 @@ class DatabaseService {
     return map;
   }
 
+  /// Today subject wise
+  static Map<String, int> getTodayStudyTimeBySubject() {
+    final today = _toDateStr(DateTime.now());
+    final map = <String, int>{};
+    for (final s in getFocusSessionsOnly()) {
+      if (_toDateStr(s.completedAt) == today) {
+        map[s.subjectName] = (map[s.subjectName] ?? 0) + s.durationMinutes;
+      }
+    }
+    return map;
+  }
+
+  /// Yesterday subject wise
+  static Map<String, int> getYesterdayStudyTimeBySubject() {
+    final yesterday = _toDateStr(
+      DateTime.now().subtract(const Duration(days: 1)),
+    );
+    final map = <String, int>{};
+    for (final s in getFocusSessionsOnly()) {
+      if (_toDateStr(s.completedAt) == yesterday) {
+        map[s.subjectName] = (map[s.subjectName] ?? 0) + s.durationMinutes;
+      }
+    }
+    return map;
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // 🔥 STREAK SYSTEM
+  // ═══════════════════════════════════════════════════════════
+
   static int getStudyStreak() =>
       _settingsBox.get('current_study_streak', defaultValue: 0) as int;
 
   static int getBestStudyStreak() =>
       _settingsBox.get('best_study_streak', defaultValue: 0) as int;
+
+  /// Session data থেকে current streak calculate
+  static int calculateCurrentStreakFromSessions() {
+    final map = getAllDailyStudyMinutesMap();
+    if (map.isEmpty) return 0;
+    final now = DateTime.now();
+    int streak = 0;
+    for (int i = 0; i <= 365; i++) {
+      final day = now.subtract(Duration(days: i));
+      final dateStr = _toDateStr(day);
+      final mins = map[dateStr] ?? 0;
+      if (mins > 0) {
+        streak++;
+      } else {
+        if (i == 0) continue;
+        break;
+      }
+    }
+    return streak;
+  }
+
+  /// Session data থেকে best streak calculate
+  static int calculateBestStreakFromSessions() {
+    final map = getAllDailyStudyMinutesMap();
+    if (map.isEmpty) return 0;
+    final sortedDates = map.keys.toList()..sort();
+    if (sortedDates.isEmpty) return 0;
+    int bestStreak = 0;
+    int currentStreak = 1;
+    for (int i = 1; i < sortedDates.length; i++) {
+      final prev = DateTime.parse(sortedDates[i - 1]);
+      final curr = DateTime.parse(sortedDates[i]);
+      final diff = curr.difference(prev).inDays;
+      if (diff == 1 && (map[sortedDates[i]] ?? 0) > 0) {
+        currentStreak++;
+      } else {
+        if (currentStreak > bestStreak) bestStreak = currentStreak;
+        currentStreak = 1;
+      }
+    }
+    if (currentStreak > bestStreak) bestStreak = currentStreak;
+    return bestStreak;
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // 📊 COMPLETE FOCUS STATS
+  // ═══════════════════════════════════════════════════════════
+
+  /// সব focus stats একসাথে (UI এর জন্য)
+  static Map<String, dynamic> getCompleteFocusStats() {
+    final todayMins = getTotalStudyMinutesToday();
+    final yesterdayMins = getTotalStudyMinutesYesterday();
+    final weekMins = getTotalStudyMinutesThisWeek();
+    final monthMins = getTotalStudyMinutesThisMonth();
+    final allTimeMins = getTotalStudyMinutesAllTime();
+    final bestDayMins = getBestDayFocusMinutes();
+    final activeDays = getActiveDaysCount();
+    final avgMins = getAverageDailyFocusMinutes();
+    final streak = getStudyStreak();
+    final bestStreak = getBestStudyStreak();
+    final totalSessions = getTotalPomodorosCompleted();
+    final last7Days = getLastNDaysStudyData(7);
+    final last30Days = getLastNDaysStudyData(30);
+
+    final todayVsYesterday = yesterdayMins > 0
+        ? ((todayMins - yesterdayMins) / yesterdayMins * 100)
+        : (todayMins > 0 ? 100.0 : 0.0);
+
+    return {
+      'todayMins': todayMins,
+      'yesterdayMins': yesterdayMins,
+      'weekMins': weekMins,
+      'monthMins': monthMins,
+      'allTimeMins': allTimeMins,
+      'bestDayMins': bestDayMins,
+      'bestDayDate': getBestDayDate(),
+      'activeDays': activeDays,
+      'activeDaysThisWeek': getActiveDaysThisWeek(),
+      'avgMins': avgMins,
+      'streak': streak,
+      'bestStreak': bestStreak,
+      'totalSessions': totalSessions,
+      'last7Days': last7Days,
+      'last30Days': last30Days,
+      'todayVsYesterdayPercent': todayVsYesterday,
+      'todaySubjects': getTodayStudyTimeBySubject(),
+      'yesterdaySubjects': getYesterdayStudyTimeBySubject(),
+      'allTimeSubjects': getStudyTimeBySubject(),
+    };
+  }
+
+  // ═══════════════════════════════════════
+  // MISC STUDY HELPERS
+  // ═══════════════════════════════════════
 
   static int getTotalPomodorosCompleted() => getFocusSessionsOnly().length;
 
@@ -831,9 +1333,7 @@ class DatabaseService {
   static List<String> getCustomStudySubjects() {
     final raw =
     _settingsBox.get('custom_study_subjects', defaultValue: <dynamic>[]);
-    if (raw is List) {
-      return raw.map((e) => e.toString()).toList();
-    }
+    if (raw is List) return raw.map((e) => e.toString()).toList();
     return <String>[];
   }
 
@@ -938,10 +1438,9 @@ class DatabaseService {
   // ═══════════════════════════════════════
 
   static List<String> getCustomCategories() {
-    final raw = _settingsBox.get('custom_categories', defaultValue: <dynamic>[]);
-    if (raw is List) {
-      return raw.map((e) => e.toString()).toList();
-    }
+    final raw =
+    _settingsBox.get('custom_categories', defaultValue: <dynamic>[]);
+    if (raw is List) return raw.map((e) => e.toString()).toList();
     return <String>[];
   }
 
@@ -989,13 +1488,11 @@ class DatabaseService {
   static String? getMostCommonMissedReason(Habit habit) {
     final reasons = habit.getRecentMissedReasons(14);
     if (reasons.isEmpty) return null;
-
     final countMap = <String, int>{};
     for (final r in reasons) {
       final reason = r.split(':').skip(1).join(':');
       countMap[reason] = (countMap[reason] ?? 0) + 1;
     }
-
     String? mostCommon;
     int maxCount = 0;
     for (final entry in countMap.entries) {
@@ -1018,7 +1515,8 @@ class DatabaseService {
 
   static TimeOfDay getAutoResetTime() {
     final hour = _settingsBox.get('auto_reset_hour', defaultValue: 0) as int;
-    final minute = _settingsBox.get('auto_reset_minute', defaultValue: 0) as int;
+    final minute =
+    _settingsBox.get('auto_reset_minute', defaultValue: 0) as int;
     return TimeOfDay(hour: hour, minute: minute);
   }
 
@@ -1034,12 +1532,9 @@ class DatabaseService {
     final lastResetDate =
     _settingsBox.get('last_auto_reset_date', defaultValue: '') as String;
     final today = now.toString().split(' ')[0];
-
     if (lastResetDate == today) return false;
-
     final nowMinutes = now.hour * 60 + now.minute;
     final resetMinutes = resetTime.hour * 60 + resetTime.minute;
-
     return nowMinutes >= resetMinutes;
   }
 
@@ -1050,10 +1545,8 @@ class DatabaseService {
 
   static Future<void> performAutoReset() async {
     if (!shouldResetHabitsNow()) return;
-
     final habits = getAllHabits();
     final today = DateTime.now().toString().split(' ')[0];
-
     for (final habit in habits) {
       if (habit.lastProgressDate != today) {
         habit.dailyGoalProgress = 0;
@@ -1061,7 +1554,6 @@ class DatabaseService {
         await updateHabit(habit);
       }
     }
-
     await markAutoResetDone();
     debugPrint('✅ Auto reset performed at ${DateTime.now()}');
   }
@@ -1122,7 +1614,7 @@ class DatabaseService {
   }
 
   // ═══════════════════════════════════════════════════════════
-  // 🌟 PRO / SUBSCRIPTION (VIP REMOVED)
+  // 🌟 PRO / SUBSCRIPTION
   // ═══════════════════════════════════════════════════════════
 
   static bool isProUser() =>
@@ -1140,10 +1632,7 @@ class DatabaseService {
     await _settingsBox.put('purchased_plan', planId);
   }
 
-  /// ✅ Backward compatible - now same as isProUser
   static bool isProOrVipUser() => isProUser();
-
-  /// ✅ Legacy stubs (always return false/empty - kept for backward compat)
   static bool isVipUser() => false;
   static bool isVipExpired() => true;
   static int getVipExpiry() => 0;
@@ -1312,21 +1801,16 @@ class DatabaseService {
     final now = DateTime.now();
     final map = <int, double>{};
     final totalHabits = _habitsBox.values.length;
-
     if (totalHabits == 0) return map;
-
     for (int i = 0; i < 7; i++) {
       final day = now.subtract(Duration(days: (now.weekday - 1) - i));
       final dateStr = day.toString().split(' ')[0];
-
       int completed = 0;
       for (var habit in _habitsBox.values) {
         if (habit.completedDates.contains(dateStr)) completed++;
       }
-
       map[i + 1] = (completed / totalHabits) * 100;
     }
-
     return map;
   }
 
@@ -1481,7 +1965,10 @@ class DatabaseService {
   }
 
   static int getRoutineUnlockExpiry(String routineId) {
-    return _settingsBox.get(_routineUnlockKey(routineId), defaultValue: 0) as int;
+    return _settingsBox.get(
+      _routineUnlockKey(routineId),
+      defaultValue: 0,
+    ) as int;
   }
 
   static Future<void> lockRoutine(String routineId) async {

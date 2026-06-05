@@ -4,6 +4,7 @@ import android.app.KeyguardManager
 import android.content.Context
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -13,9 +14,8 @@ class MainActivity : FlutterActivity() {
 
     private val CHANNEL = "com.habit.node/lock_screen"
 
-    // Track whether alarm bypass was requested
-    // before onCreate completed
     private var pendingBypassEnable = false
+    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -26,7 +26,6 @@ class MainActivity : FlutterActivity() {
         ).setMethodCallHandler { call, result ->
             when (call.method) {
 
-                // Alarm screen opening — enable lock screen bypass
                 "enableLockScreenBypass" -> {
                     runOnUiThread {
                         applyLockScreenBypass(enable = true)
@@ -34,7 +33,6 @@ class MainActivity : FlutterActivity() {
                     result.success(true)
                 }
 
-                // Alarm screen closed — disable lock screen bypass
                 "disableLockScreenBypass" -> {
                     runOnUiThread {
                         applyLockScreenBypass(enable = false)
@@ -43,7 +41,6 @@ class MainActivity : FlutterActivity() {
                     result.success(true)
                 }
 
-                // Check if device is currently locked
                 "isDeviceLocked" -> {
                     val km = getSystemService(
                         Context.KEYGUARD_SERVICE
@@ -60,17 +57,12 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Check if this activity was launched by
-        // a full-screen alarm notification
         val launchedByAlarm = isLaunchedByAlarmNotification()
 
         if (launchedByAlarm) {
-            // Alarm notification launched this activity
-            // — enable bypass immediately before Flutter loads
             applyLockScreenBypass(enable = true)
             pendingBypassEnable = true
         } else {
-            // Normal app launch — keep lock screen secure
             applyLockScreenBypass(enable = false)
             pendingBypassEnable = false
         }
@@ -80,8 +72,6 @@ class MainActivity : FlutterActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
 
-        // Activity already running — check if alarm notification
-        // brought us here
         val launchedByAlarm = isLaunchedByAlarmNotification()
         if (launchedByAlarm) {
             runOnUiThread {
@@ -91,34 +81,55 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    // Apply or remove lock screen bypass flags
+    // 🚀 SECURE FIX: Lockscreen Overlay (Without Unlocking)
     private fun applyLockScreenBypass(enable: Boolean) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            // API 27+ — use modern methods
-            setShowWhenLocked(enable)
-            setTurnScreenOn(enable)
-        } else {
-            // API < 27 — use window flags
-            @Suppress("DEPRECATION")
-            if (enable) {
-                window.addFlags(
-                    WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                            WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
-                            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
-                            WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
-                )
-            } else {
-                window.clearFlags(
-                    WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                            WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
-                            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
-                            WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+
+        if (enable) {
+            // 1. Force Screen On
+            if (wakeLock == null) {
+                @Suppress("DEPRECATION")
+                wakeLock = pm.newWakeLock(
+                    PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                    "HabitNode::AlarmWakeLock"
                 )
             }
+            if (wakeLock?.isHeld == false) {
+                wakeLock?.acquire(10 * 60 * 1000L) // 10 minutes max
+            }
+
+            // 2. Show Over Lock Screen (WITHOUT Unlocking Keyguard)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                setShowWhenLocked(true)
+                setTurnScreenOn(true)
+                // ❌ REMOVED: requestDismissKeyguard (এটিই প্যাটার্ন বা পিন চাইতো!)
+            }
+            @Suppress("DEPRECATION")
+            window.addFlags(
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                        WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+                        WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+                // ❌ REMOVED: FLAG_DISMISS_KEYGUARD (লক স্ক্রিন রিমুভ করার কমান্ড বাতিল)
+            )
+        } else {
+            // Release Screen
+            wakeLock?.let {
+                if (it.isHeld) it.release()
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                setShowWhenLocked(false)
+                setTurnScreenOn(false)
+            }
+            @Suppress("DEPRECATION")
+            window.clearFlags(
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                        WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+                        WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+            )
         }
     }
 
-    // Check if current intent came from an alarm notification
     private fun isLaunchedByAlarmNotification(): Boolean {
         val intent = intent ?: return false
         val payload = intent.getStringExtra("payload") ?: ""

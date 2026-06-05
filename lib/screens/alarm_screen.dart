@@ -2,7 +2,6 @@
 
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -36,9 +35,6 @@ class _AlarmScreenState extends State<AlarmScreen>
 
   late final Animation<double> _entryFade;
   late final Animation<double> _entryScale;
-
-  Timer? _clockTimer;
-  DateTime _now = DateTime.now();
 
   bool _isBusy = false;
 
@@ -118,14 +114,6 @@ class _AlarmScreenState extends State<AlarmScreen>
 
     _entryController.forward();
 
-    // Live clock
-    _clockTimer = Timer.periodic(
-      const Duration(seconds: 1),
-          (_) {
-        if (mounted) setState(() => _now = DateTime.now());
-      },
-    );
-
     // ✅ Alarm শুরু করো
     unawaited(_startAlarmSafely());
   }
@@ -156,7 +144,6 @@ class _AlarmScreenState extends State<AlarmScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _clockTimer?.cancel();
 
     _pulseController.dispose();
     _ringController.dispose();
@@ -165,7 +152,6 @@ class _AlarmScreenState extends State<AlarmScreen>
     _entryController.dispose();
 
     // ✅ FIX: ensureStopped — force stop
-    // _isRinging check নেই, সবসময় stop করবে
     unawaited(AlarmService.ensureStopped());
 
     // Lock screen bypass disable
@@ -240,32 +226,6 @@ class _AlarmScreenState extends State<AlarmScreen>
   }
 
   // ─────────────────────────────────────────────
-  // FORMATTERS
-  // ─────────────────────────────────────────────
-
-  String _formatClock(DateTime time) {
-    final hour =
-    time.hour % 12 == 0 ? 12 : time.hour % 12;
-    final minute =
-    time.minute.toString().padLeft(2, '0');
-    final period = time.hour >= 12 ? 'PM' : 'AM';
-    return '$hour:$minute $period';
-  }
-
-  String _formatDate(DateTime time) {
-    const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-    ];
-    const days = [
-      'Mon', 'Tue', 'Wed', 'Thu',
-      'Fri', 'Sat', 'Sun',
-    ];
-    return '${days[time.weekday - 1]}, '
-        '${time.day} ${months[time.month - 1]}';
-  }
-
-  // ─────────────────────────────────────────────
   // BUILD
   // ─────────────────────────────────────────────
 
@@ -282,8 +242,7 @@ class _AlarmScreenState extends State<AlarmScreen>
         value: SystemUiOverlayStyle.light.copyWith(
           statusBarColor: Colors.transparent,
           systemNavigationBarColor: Colors.transparent,
-          systemNavigationBarIconBrightness:
-          Brightness.light,
+          systemNavigationBarIconBrightness: Brightness.light,
           statusBarIconBrightness: Brightness.light,
         ),
         child: Scaffold(
@@ -291,18 +250,15 @@ class _AlarmScreenState extends State<AlarmScreen>
           body: Stack(
             children: [
               // ANIMATED BACKGROUND
-              _buildAnimatedBackground(primary),
+              RepaintBoundary(
+                child: _buildAnimatedBackground(primary),
+              ),
 
-              // GLASSMORPHISM OVERLAY
+              // 🚀 PERFORMANCE FIX: Removed heavy BackdropFilter
+              // Using a simple dark overlay instead for performance
               Positioned.fill(
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(
-                    sigmaX: 40,
-                    sigmaY: 40,
-                  ),
-                  child: Container(
-                    color: Colors.black.withOpacity(0.3),
-                  ),
+                child: Container(
+                  color: Colors.black.withOpacity(0.65),
                 ),
               ),
 
@@ -315,32 +271,23 @@ class _AlarmScreenState extends State<AlarmScreen>
                     child: Padding(
                       padding: EdgeInsets.symmetric(
                         horizontal: 24,
-                        vertical:
-                        isSmallScreen ? 12 : 20,
+                        vertical: isSmallScreen ? 12 : 20,
                       ),
                       child: Column(
                         children: [
                           _buildTopStatus(primary),
-                          SizedBox(
-                              height:
-                              isSmallScreen ? 16 : 24),
-                          _buildLiveClock(),
-                          SizedBox(
-                              height:
-                              isSmallScreen ? 20 : 36),
+                          SizedBox(height: isSmallScreen ? 16 : 24),
+                          // 🚀 PERFORMANCE FIX: Clock isolated in its own widget
+                          _LiveClockWidget(habitColor: primary),
+                          SizedBox(height: isSmallScreen ? 20 : 36),
                           Expanded(
                             child: Center(
-                              child: _buildPulsingOrb(
-                                  primary, size),
+                              child: _buildPulsingOrb(primary, size),
                             ),
                           ),
-                          SizedBox(
-                              height:
-                              isSmallScreen ? 16 : 24),
+                          SizedBox(height: isSmallScreen ? 16 : 24),
                           _buildInfoCard(primary),
-                          SizedBox(
-                              height:
-                              isSmallScreen ? 16 : 24),
+                          SizedBox(height: isSmallScreen ? 16 : 24),
                           _buildActionButtons(primary),
                         ],
                       ),
@@ -408,27 +355,8 @@ class _AlarmScreenState extends State<AlarmScreen>
                   shape: BoxShape.circle,
                   gradient: RadialGradient(
                     colors: [
-                      AppConfig.primaryColor
-                          .withOpacity(0.25),
-                      AppConfig.primaryColor
-                          .withOpacity(0.0),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              top: 250 + (math.sin(t * 1.5) * 40),
-              left: 50 + (math.cos(t * 1.1) * 50),
-              child: Container(
-                width: 180,
-                height: 180,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: [
-                      Colors.purple.withOpacity(0.2),
-                      Colors.purple.withOpacity(0.0),
+                      AppConfig.primaryColor.withOpacity(0.25),
+                      AppConfig.primaryColor.withOpacity(0.0),
                     ],
                   ),
                 ),
@@ -454,16 +382,8 @@ class _AlarmScreenState extends State<AlarmScreen>
             return ShaderMask(
               shaderCallback: (bounds) {
                 return LinearGradient(
-                  colors: [
-                    primary,
-                    Colors.white,
-                    primary,
-                  ],
-                  stops: [
-                    0.0,
-                    _shimmerController.value,
-                    1.0,
-                  ],
+                  colors: [primary, Colors.white, primary],
+                  stops: [0.0, _shimmerController.value, 1.0],
                 ).createShader(bounds);
               },
               child: Container(
@@ -472,13 +392,10 @@ class _AlarmScreenState extends State<AlarmScreen>
                   vertical: 10,
                 ),
                 decoration: BoxDecoration(
-                  color:
-                  Colors.white.withOpacity(0.06),
-                  borderRadius:
-                  BorderRadius.circular(999),
+                  color: Colors.white.withOpacity(0.06),
+                  borderRadius: BorderRadius.circular(999),
                   border: Border.all(
-                    color:
-                    Colors.white.withOpacity(0.15),
+                    color: Colors.white.withOpacity(0.15),
                   ),
                 ),
                 child: Row(
@@ -519,43 +436,6 @@ class _AlarmScreenState extends State<AlarmScreen>
   }
 
   // ─────────────────────────────────────────────
-  // LIVE CLOCK
-  // ─────────────────────────────────────────────
-
-  Widget _buildLiveClock() {
-    return Column(
-      children: [
-        Text(
-          _formatClock(_now),
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 56,
-            fontWeight: FontWeight.w900,
-            letterSpacing: -1,
-            height: 1,
-            shadows: [
-              Shadow(
-                color: _habitColor.withOpacity(0.5),
-                blurRadius: 20,
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          _formatDate(_now),
-          style: TextStyle(
-            color: Colors.white.withOpacity(0.6),
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 1,
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ─────────────────────────────────────────────
   // PULSING ORB
   // ─────────────────────────────────────────────
 
@@ -576,12 +456,9 @@ class _AlarmScreenState extends State<AlarmScreen>
                 alignment: Alignment.center,
                 children: List.generate(3, (i) {
                   final offset = i / 3;
-                  final progress =
-                      (_ringController.value + offset) %
-                          1.0;
+                  final progress = (_ringController.value + offset) % 1.0;
                   final scale = 0.6 + (progress * 0.8);
-                  final opacity =
-                      (1.0 - progress) * 0.5;
+                  final opacity = (1.0 - progress) * 0.5;
 
                   return Transform.scale(
                     scale: scale,
@@ -591,8 +468,7 @@ class _AlarmScreenState extends State<AlarmScreen>
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: primary
-                              .withOpacity(opacity),
+                          color: primary.withOpacity(opacity),
                           width: 2,
                         ),
                       ),
@@ -605,10 +481,7 @@ class _AlarmScreenState extends State<AlarmScreen>
 
           // Outer Glow
           ScaleTransition(
-            scale: Tween<double>(
-              begin: 0.9,
-              end: 1.05,
-            ).animate(
+            scale: Tween<double>(begin: 0.9, end: 1.05).animate(
               CurvedAnimation(
                 parent: _pulseController,
                 curve: Curves.easeInOut,
@@ -628,50 +501,17 @@ class _AlarmScreenState extends State<AlarmScreen>
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: primary.withOpacity(0.5),
-                    blurRadius: 60,
-                    spreadRadius: 10,
+                    color: primary.withOpacity(0.4),
+                    blurRadius: 40,
+                    spreadRadius: 5,
                   ),
                 ],
               ),
             ),
           ),
 
-          // Rotating Gradient Ring
-          AnimatedBuilder(
-            animation: _rotateController,
-            builder: (context, _) {
-              return Transform.rotate(
-                angle:
-                _rotateController.value * 2 * math.pi,
-                child: Container(
-                  width: orbSize - 10,
-                  height: orbSize - 10,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: SweepGradient(
-                      colors: [
-                        primary.withOpacity(0.0),
-                        primary.withOpacity(0.8),
-                        Colors.white.withOpacity(0.9),
-                        primary.withOpacity(0.8),
-                        primary.withOpacity(0.0),
-                      ],
-                      stops: const [
-                        0.0,
-                        0.3,
-                        0.5,
-                        0.7,
-                        1.0,
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-
-          // Inner Glass Circle
+          // 🚀 PERFORMANCE FIX: Removed BackdropFilter inside orb
+          // Used a solid gradient overlay which is 100x faster to render
           Container(
             width: orbSize - 30,
             height: orbSize - 30,
@@ -691,55 +531,33 @@ class _AlarmScreenState extends State<AlarmScreen>
               ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.4),
-                  blurRadius: 30,
+                  color: Colors.black.withOpacity(0.5),
+                  blurRadius: 20,
                   offset: const Offset(0, 10),
-                ),
-                BoxShadow(
-                  color: primary.withOpacity(0.3),
-                  blurRadius: 40,
-                  spreadRadius: -5,
                 ),
               ],
             ),
-            child: ClipOval(
-              child: BackdropFilter(
-                filter: ImageFilter.blur(
-                  sigmaX: 10,
-                  sigmaY: 10,
-                ),
-                child: Container(
-                  color: Colors.white.withOpacity(0.05),
-                  child: Center(
-                    child: AnimatedBuilder(
-                      animation: _pulseController,
-                      builder: (context, _) {
-                        final scale = 1.0 +
-                            (math.sin(
-                                _pulseController
-                                    .value *
-                                    math.pi) *
-                                0.08);
-                        return Transform.scale(
-                          scale: scale,
-                          child: Text(
-                            widget.habit.emoji,
-                            style: TextStyle(
-                              fontSize: orbSize * 0.4,
-                              shadows: [
-                                Shadow(
-                                  color: primary
-                                      .withOpacity(0.6),
-                                  blurRadius: 25,
-                                ),
-                              ],
-                            ),
+            child: Center(
+              child: AnimatedBuilder(
+                animation: _pulseController,
+                builder: (context, _) {
+                  final scale = 1.0 + (math.sin(_pulseController.value * math.pi) * 0.08);
+                  return Transform.scale(
+                    scale: scale,
+                    child: Text(
+                      widget.habit.emoji,
+                      style: TextStyle(
+                        fontSize: orbSize * 0.4,
+                        shadows: [
+                          Shadow(
+                            color: primary.withOpacity(0.6),
+                            blurRadius: 25,
                           ),
-                        );
-                      },
+                        ],
+                      ),
                     ),
-                  ),
-                ),
+                  );
+                },
               ),
             ),
           ),
@@ -753,117 +571,108 @@ class _AlarmScreenState extends State<AlarmScreen>
   // ─────────────────────────────────────────────
 
   Widget _buildInfoCard(Color primary) {
+    // 🚀 PERFORMANCE FIX: Removed heavy BackdropFilter
+    // Used opaque styling to maintain the premium look smoothly
     return ClipRRect(
       borderRadius: BorderRadius.circular(28),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          padding: const EdgeInsets.all(22),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Colors.white.withOpacity(0.1),
-                Colors.white.withOpacity(0.04),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(28),
-            border: Border.all(
-              color: Colors.white.withOpacity(0.15),
-              width: 1.5,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.3),
-                blurRadius: 30,
-                offset: const Offset(0, 15),
-              ),
-              BoxShadow(
-                color: primary.withOpacity(0.2),
-                blurRadius: 40,
-                spreadRadius: -10,
-              ),
-            ],
+      child: Container(
+        padding: const EdgeInsets.all(22),
+        decoration: BoxDecoration(
+          color: const Color(0xFF131B2C).withOpacity(0.95), // Dark solid color instead of blur
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(
+            color: Colors.white.withOpacity(0.1),
+            width: 1.5,
           ),
-          child: Column(
-            children: [
-              ShaderMask(
-                shaderCallback: (bounds) {
-                  return LinearGradient(
-                    colors: [primary, Colors.white, primary],
-                  ).createShader(bounds);
-                },
-                child: const Text(
-                  'WAKE UP!',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 4,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                widget.habit.name,
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.4),
+              blurRadius: 20,
+              offset: const Offset(0, 10),
+            ),
+            BoxShadow(
+              color: primary.withOpacity(0.15),
+              blurRadius: 30,
+              spreadRadius: -10,
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            ShaderMask(
+              shaderCallback: (bounds) {
+                return LinearGradient(
+                  colors: [primary, Colors.white, primary],
+                ).createShader(bounds);
+              },
+              child: const Text(
+                'WAKE UP!',
                 style: TextStyle(
                   color: Colors.white,
-                  fontSize: 26,
-                  height: 1.2,
+                  fontSize: 13,
                   fontWeight: FontWeight.w900,
-                  letterSpacing: -0.5,
-                  shadows: [
-                    Shadow(
-                      color: primary.withOpacity(0.4),
-                      blurRadius: 15,
-                    ),
-                  ],
+                  letterSpacing: 4,
                 ),
               ),
-              const SizedBox(height: 10),
-              Text(
-                _alarmText,
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.75),
-                  fontSize: 14,
-                  height: 1.5,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 18),
-              Wrap(
-                spacing: 10,
-                runSpacing: 8,
-                alignment: WrapAlignment.center,
-                children: [
-                  _InfoChip(
-                    icon: Icons.schedule_rounded,
-                    label: _habitTime,
-                    color: primary,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              widget.habit.name,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 26,
+                height: 1.2,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.5,
+                shadows: [
+                  Shadow(
+                    color: primary.withOpacity(0.4),
+                    blurRadius: 15,
                   ),
-                  _InfoChip(
-                    icon: Icons.local_fire_department_rounded,
-                    label: '${widget.habit.currentStreak} days',
-                    color: Colors.orange,
-                  ),
-                  if (widget.habit.bestStreak > 0)
-                    _InfoChip(
-                      icon: Icons.emoji_events_rounded,
-                      label:
-                      'Best ${widget.habit.bestStreak}',
-                      color: const Color(0xFFFFD700),
-                    ),
                 ],
               ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              _alarmText,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.75),
+                fontSize: 14,
+                height: 1.5,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 18),
+            Wrap(
+              spacing: 10,
+              runSpacing: 8,
+              alignment: WrapAlignment.center,
+              children: [
+                _InfoChip(
+                  icon: Icons.schedule_rounded,
+                  label: _habitTime,
+                  color: primary,
+                ),
+                _InfoChip(
+                  icon: Icons.local_fire_department_rounded,
+                  label: '${widget.habit.currentStreak} days',
+                  color: Colors.orange,
+                ),
+                if (widget.habit.bestStreak > 0)
+                  _InfoChip(
+                    icon: Icons.emoji_events_rounded,
+                    label: 'Best ${widget.habit.bestStreak}',
+                    color: const Color(0xFFFFD700),
+                  ),
+              ],
+            ),
+          ],
         ),
       ),
     );
@@ -883,9 +692,9 @@ class _AlarmScreenState extends State<AlarmScreen>
             borderRadius: BorderRadius.circular(22),
             boxShadow: [
               BoxShadow(
-                color: primary.withOpacity(0.6),
-                blurRadius: 25,
-                offset: const Offset(0, 10),
+                color: primary.withOpacity(0.5),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
               ),
             ],
           ),
@@ -916,15 +725,13 @@ class _AlarmScreenState extends State<AlarmScreen>
                     height: 24,
                     child: CircularProgressIndicator(
                       strokeWidth: 2.5,
-                      valueColor:
-                      AlwaysStoppedAnimation<Color>(
+                      valueColor: AlwaysStoppedAnimation<Color>(
                         Colors.white,
                       ),
                     ),
                   )
                       : const Row(
-                    mainAxisAlignment:
-                    MainAxisAlignment.center,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(
                         Icons.check_circle_rounded,
@@ -971,8 +778,7 @@ class _AlarmScreenState extends State<AlarmScreen>
                   vertical: 16,
                 ),
                 child: Row(
-                  mainAxisAlignment:
-                  MainAxisAlignment.center,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(
                       Icons.snooze_rounded,
@@ -983,8 +789,7 @@ class _AlarmScreenState extends State<AlarmScreen>
                     Text(
                       'SNOOZE 5 MINUTES',
                       style: TextStyle(
-                        color:
-                        Colors.white.withOpacity(0.85),
+                        color: Colors.white.withOpacity(0.85),
                         fontSize: 15,
                         fontWeight: FontWeight.w800,
                         letterSpacing: 1.2,
@@ -994,6 +799,86 @@ class _AlarmScreenState extends State<AlarmScreen>
                 ),
               ),
             ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// 🚀 NEW: ISOLATED LIVE CLOCK WIDGET (PERFORMANCE FIX)
+// ─────────────────────────────────────────────
+class _LiveClockWidget extends StatefulWidget {
+  final Color habitColor;
+  const _LiveClockWidget({required this.habitColor});
+
+  @override
+  State<_LiveClockWidget> createState() => _LiveClockWidgetState();
+}
+
+class _LiveClockWidgetState extends State<_LiveClockWidget> {
+  Timer? _clockTimer;
+  DateTime _now = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    _clockTimer = Timer.periodic(
+      const Duration(seconds: 1),
+          (_) {
+        if (mounted) setState(() => _now = DateTime.now());
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _clockTimer?.cancel();
+    super.dispose();
+  }
+
+  String _formatClock(DateTime time) {
+    final hour = time.hour % 12 == 0 ? 12 : time.hour % 12;
+    final minute = time.minute.toString().padLeft(2, '0');
+    final period = time.hour >= 12 ? 'PM' : 'AM';
+    return '$hour:$minute $period';
+  }
+
+  String _formatDate(DateTime time) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    return '${days[time.weekday - 1]}, ${time.day} ${months[time.month - 1]}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(
+          _formatClock(_now),
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 56,
+            fontWeight: FontWeight.w900,
+            letterSpacing: -1,
+            height: 1,
+            shadows: [
+              Shadow(
+                color: widget.habitColor.withOpacity(0.5),
+                blurRadius: 20,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          _formatDate(_now),
+          style: TextStyle(
+            color: Colors.white.withOpacity(0.6),
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 1,
           ),
         ),
       ],

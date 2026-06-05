@@ -1,6 +1,7 @@
 // lib/services/auth_service.dart
 
 import 'dart:async';
+import 'dart:io'; // 🚀 FIX: ইন্টারনেট চেক করার জন্য এটি যোগ করা হয়েছে
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -170,6 +171,19 @@ class AuthService {
     await ensureSignedInOnDemand(interactive: true);
   }
 
+  // 🚀 FIX: Prevent Infinite Lifecycle Loop (Flickering)
+  Future<void> _checkInternetBeforeIntent() async {
+    try {
+      final result = await InternetAddress.lookup('google.com')
+          .timeout(const Duration(seconds: 2));
+      if (result.isEmpty || result.first.rawAddress.isEmpty) {
+        throw const AuthServiceException('No internet connection. Please try again.');
+      }
+    } catch (_) {
+      throw const AuthServiceException('No internet connection. Please try again.');
+    }
+  }
+
   Future<User?> ensureSignedInOnDemand(
       {required bool interactive}) async {
     if (isFirebaseSignedIn) {
@@ -207,9 +221,6 @@ class AuthService {
     }
   }
 
-  // ✅ FIX: Login popup বারবার আসার সমাধান
-  // interactive=false হলে কোনো UI দেখাবে না
-  // শুধু user নিজে button চাপলেই UI আসবে
   Future<GoogleSignInAccount?>
   ensureGoogleSignedInOnDemand({
     required bool interactive,
@@ -241,10 +252,6 @@ class AuthService {
       return existing;
     }
 
-    // ✅ FIX: interactive=false হলে
-    // signInSilently() call করবো না
-    // কারণ এটা account picker UI দেখাতে পারে
-    // শুধু currentUser চেক করবো
     if (!interactive) {
       final current = _google.currentUser;
       if (current != null) {
@@ -253,9 +260,6 @@ class AuthService {
       }
       return current;
     }
-
-    // ✅ interactive=true হলেই নিচের code চলবে
-    // মানে user নিজে Sign-in button চেপেছে
 
     if (_googleEnsureCompleter != null) {
       return _googleEnsureCompleter!.future;
@@ -266,9 +270,6 @@ class AuthService {
     _googleEnsureCompleter = completer;
 
     try {
-      // ✅ FIX: Silent sign-in শুধু interactive mode এ
-      // suppressErrors: true — account picker দেখাবে না
-      // শুধু already signed-in থাকলে silent return করবে
       try {
         final silent = await _google.signInSilently(
           suppressErrors: true,
@@ -284,8 +285,9 @@ class AuthService {
             'Auth: Google silent sign-in failed: $e');
       }
 
-      // ✅ User explicitly sign-in চাইছে
-      // তাই account picker দেখানো ঠিক আছে
+      // 🚀 FIX: Intent ওপেন করার আগে নেটওয়ার্ক চেক
+      await _checkInternetBeforeIntent();
+
       final acct = await _runExclusiveInteractive<
           GoogleSignInAccount?>(() async {
         return _google.signIn();
@@ -353,7 +355,6 @@ class AuthService {
             'Sign-in failed. Please try again.');
       }
 
-      // ✅ FIX: Token refresh — silent, no UI
       try {
         await user.getIdToken(false);
       } catch (_) {}
@@ -402,6 +403,10 @@ class AuthService {
     required bool interactive,
     required bool forceConsent,
   }) async {
+
+    // 🚀 FIX: Intent ওপেন করার আগে নেটওয়ার্ক চেক
+    await _checkInternetBeforeIntent();
+
     final ok =
     await _runExclusiveInteractive<bool>(() async {
       return _google
@@ -432,6 +437,9 @@ class AuthService {
           'Sign-in was cancelled.',
         );
       }
+
+      // 🚀 FIX: Intent ওপেন করার আগে নেটওয়ার্ক চেক
+      await _checkInternetBeforeIntent();
 
       final ok2 =
       await _runExclusiveInteractive<bool>(

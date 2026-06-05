@@ -17,8 +17,10 @@ import '../services/leaderboard_moderation_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/purchase_service.dart';
 import '../services/sound_service.dart';
-import 'leaderboard_profile_screen.dart';
-import 'public_leaderboard_profile_screen.dart';
+
+// ✅ prefix দিয়ে import — conflict নেই
+import 'leaderboard_profile_screen.dart' as lp_screen;
+import 'public_leaderboard_profile_screen.dart' as pub_screen;
 import 'inbox_screen.dart';
 import 'chat_screen.dart';
 
@@ -26,21 +28,17 @@ class LeaderboardScreen extends StatefulWidget {
   const LeaderboardScreen({super.key});
 
   @override
-  State<LeaderboardScreen> createState() =>
-      _LeaderboardScreenState();
+  State<LeaderboardScreen> createState() => _LeaderboardScreenState();
 }
 
-class _LeaderboardScreenState
-    extends State<LeaderboardScreen>
+class _LeaderboardScreenState extends State<LeaderboardScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
 
-  LeaderboardPeriod _currentPeriod =
-      LeaderboardPeriod.weekly;
+  LeaderboardPeriod _currentPeriod = LeaderboardPeriod.weekly;
   int _lastTabIndex = 0;
 
-  final Map<LeaderboardPeriod, List<LeaderboardEntry>?>
-  _topByPeriod = {
+  final Map<LeaderboardPeriod, List<LeaderboardEntry>?> _topByPeriod = {
     LeaderboardPeriod.weekly: null,
     LeaderboardPeriod.allTime: null,
   };
@@ -50,53 +48,54 @@ class _LeaderboardScreenState
     LeaderboardPeriod.allTime: -1,
   };
 
-  final Map<LeaderboardPeriod, bool>
-  _loadingByPeriod = {
+  final Map<LeaderboardPeriod, bool> _loadingByPeriod = {
     LeaderboardPeriod.weekly: false,
     LeaderboardPeriod.allTime: false,
   };
 
-  final Map<LeaderboardPeriod, String>
-  _errorByPeriod = {
+  final Map<LeaderboardPeriod, String> _errorByPeriod = {
     LeaderboardPeriod.weekly: '',
     LeaderboardPeriod.allTime: '',
   };
 
   bool _syncing = false;
 
-  late final AnimationController _animC =
-  AnimationController(
+  // ✅ Weekly reset warning state
+  bool _showWeeklyResetWarning = false;
+  int _hoursUntilReset = 0;
+  String _lastWeeklyScore = '0';
+
+  late final AnimationController _animC = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 450),
   );
 
-  late final Animation<double> _fade =
-  CurvedAnimation(
+  late final Animation<double> _fade = CurvedAnimation(
     parent: _animC,
     curve: Curves.easeOutCubic,
   );
 
-  late final Animation<Offset> _slide =
-  Tween<Offset>(
+  late final Animation<Offset> _slide = Tween<Offset>(
     begin: const Offset(0, 0.04),
     end: Offset.zero,
-  ).animate(CurvedAnimation(
-      parent: _animC,
-      curve: Curves.easeOutCubic));
+  ).animate(CurvedAnimation(parent: _animC, curve: Curves.easeOutCubic));
 
   String? _activeUid;
+
+  // ✅ Throttle state
+  DateTime? _lastSyncTime;
+  bool _syncInProgress = false;
 
   @override
   void initState() {
     super.initState();
-    // ✅ ২টা ট্যাবের জন্য length: 2 করা হলো
-    _tabController = TabController(
-        length: 2, vsync: this, initialIndex: 0);
+    _tabController = TabController(length: 2, vsync: this, initialIndex: 0);
     _lastTabIndex = _tabController.index;
     _tabController.addListener(_onTabChanged);
     LeaderboardModerationService.init();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _maybeAutoLoadCurrentTab();
+      _checkWeeklyResetWarning();
     });
   }
 
@@ -108,30 +107,61 @@ class _LeaderboardScreenState
     super.dispose();
   }
 
-  bool get _isCurrentLoading =>
-      _loadingByPeriod[_currentPeriod] ?? false;
-  String get _currentError =>
-      _errorByPeriod[_currentPeriod] ?? '';
-  List<LeaderboardEntry> get _currentTop =>
-      _topByPeriod[_currentPeriod] ?? const [];
-  int get _currentRank =>
-      _rankByPeriod[_currentPeriod] ?? -1;
-  bool get _isAnyBusy =>
-      _syncing || _isCurrentLoading;
+  // ═══════════════════════════════════════
+  // ✅ WEEKLY RESET WARNING SYSTEM
+  // ═══════════════════════════════════════
+
+  void _checkWeeklyResetWarning() {
+    try {
+      final uid = DatabaseService.getLeaderboardLastUid();
+      if (uid.isEmpty) return;
+
+      final profile = DatabaseService.getLeaderboardProfileForUid(uid);
+      if (profile == null) return;
+
+      final nowMs = DateTime.now().toUtc().millisecondsSinceEpoch;
+      final oneWeekMs = 7 * 24 * 60 * 60 * 1000;
+
+      if (profile.lastWeeklyResetMs > 0) {
+        final resetAtMs = profile.lastWeeklyResetMs + oneWeekMs;
+        final remainingMs = resetAtMs - nowMs;
+
+        if (remainingMs > 0) {
+          final remainingHours = (remainingMs / (60 * 60 * 1000)).floor();
+
+          // ✅ ২৪ ঘণ্টার মধ্যে reset হলে warning দেখাও
+          if (remainingHours <= 24) {
+            setState(() {
+              _showWeeklyResetWarning = true;
+              _hoursUntilReset = remainingHours;
+              _lastWeeklyScore = profile.weeklyScore.toString();
+            });
+          } else {
+            setState(() => _showWeeklyResetWarning = false);
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('⚠️ Weekly reset check error: $e');
+    }
+  }
 
   // ═══════════════════════════════════════
   // HELPERS
   // ═══════════════════════════════════════
 
+  bool get _isCurrentLoading => _loadingByPeriod[_currentPeriod] ?? false;
+  String get _currentError => _errorByPeriod[_currentPeriod] ?? '';
+  List<LeaderboardEntry> get _currentTop =>
+      _topByPeriod[_currentPeriod] ?? const [];
+  int get _currentRank => _rankByPeriod[_currentPeriod] ?? -1;
+  bool get _isAnyBusy => _syncing || _isCurrentLoading;
+
   String _memberForText(int joinedAtMs) {
     if (joinedAtMs <= 0) return 'Member';
     final joined =
-    DateTime.fromMillisecondsSinceEpoch(
-        joinedAtMs,
-        isUtc: true)
-        .toLocal();
-    final diffDays =
-        DateTime.now().difference(joined).inDays;
+    DateTime.fromMillisecondsSinceEpoch(joinedAtMs, isUtc: true).toLocal();
+    final diffDays = DateTime.now().difference(joined).inDays;
     if (diffDays < 0) return 'Member';
     final years = diffDays ~/ 365;
     final months = (diffDays % 365) ~/ 30;
@@ -150,8 +180,7 @@ class _LeaderboardScreenState
     return 'Just joined';
   }
 
-  List<String> _getExplicitBadgeNames(
-      int badgeCount) {
+  List<String> _getExplicitBadgeNames(int badgeCount) {
     if (badgeCount <= 0) return [];
     final allBadges = [
       '⚡ Fast Starter',
@@ -165,14 +194,11 @@ class _LeaderboardScreenState
       '🌌 Reality Bender',
     ];
     return allBadges
-        .take(badgeCount > allBadges.length
-        ? allBadges.length
-        : badgeCount)
+        .take(badgeCount > allBadges.length ? allBadges.length : badgeCount)
         .toList();
   }
 
-  double _safeDouble(Object? v) =>
-      v is num ? v.toDouble() : 0.0;
+  double _safeDouble(Object? v) => v is num ? v.toDouble() : 0.0;
 
   Color _getRankColor(int rank) {
     if (rank == 1) return const Color(0xFFFFD700);
@@ -183,67 +209,52 @@ class _LeaderboardScreenState
 
   String _getScoreForEntry(LeaderboardEntry entry) {
     final score = switch (_currentPeriod) {
-      LeaderboardPeriod.daily =>
-          entry.dailyScore.toDouble(),
-      LeaderboardPeriod.weekly =>
-          entry.weeklyScore.toDouble(),
+      LeaderboardPeriod.daily => entry.dailyScore.toDouble(),
+      LeaderboardPeriod.weekly => entry.weeklyScore.toDouble(),
       LeaderboardPeriod.allTime => entry.score,
     };
-    return score.isFinite
-        ? score.toStringAsFixed(0)
-        : '0';
+    return score.isFinite ? score.toStringAsFixed(0) : '0';
   }
 
   String _prettyError(Object e) {
     if (e is AuthServiceException) return e.message;
     final msg = e.toString();
-    if (msg.contains('Sign-in cancelled'))
-      return 'Sign-in was cancelled.';
-    if (msg.contains('network-request-failed'))
-      return 'No internet connection.';
-    if (msg
-        .toLowerCase()
-        .contains('permission-denied'))
+    if (msg.contains('Sign-in cancelled')) return 'Sign-in was cancelled.';
+    if (msg.contains('network-request-failed')) return 'No internet connection.';
+    if (msg.toLowerCase().contains('permission-denied')) {
       return 'Permission denied. Please sign in again.';
+    }
     return msg
         .replaceAll('AuthServiceException:', '')
-        .replaceAll(
-        'LeaderboardServiceException:', '')
-        .replaceAll(
-        'LeaderboardModerationException:', '')
+        .replaceAll('LeaderboardServiceException:', '')
+        .replaceAll('LeaderboardModerationException:', '')
         .trim();
   }
 
   void _showSnack(String text,
-      {bool isError = false,
-        SnackBarAction? action}) {
+      {bool isError = false, SnackBarAction? action}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        backgroundColor:
-        isError ? AppConfig.errorColor : null,
+        backgroundColor: isError ? AppConfig.errorColor : null,
         action: action,
         behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.fromLTRB(
-            16, 0, 16, 16),
-        shape: RoundedRectangleBorder(
-            borderRadius:
-            BorderRadius.circular(14)),
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        shape:
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         content: Row(children: [
           Icon(
             isError
                 ? Icons.error_outline_rounded
-                : Icons
-                .check_circle_outline_rounded,
+                : Icons.check_circle_outline_rounded,
             color: Colors.white,
             size: 18,
           ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(text,
-                style: const TextStyle(
-                    fontWeight: FontWeight.w600)),
+                style: const TextStyle(fontWeight: FontWeight.w600)),
           ),
         ]),
       ),
@@ -258,21 +269,17 @@ class _LeaderboardScreenState
     HapticFeedback.lightImpact();
     SoundService.playTap();
     Navigator.push(
-        context,
-        MaterialPageRoute(
-            builder: (_) => const InboxScreen()));
+        context, MaterialPageRoute(builder: (_) => const InboxScreen()));
   }
 
-  void _showSearchSheet(
-      BuildContext context, User me) {
+  void _showSearchSheet(BuildContext context, User me) {
     HapticFeedback.lightImpact();
     SoundService.playTap();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) =>
-          PlayerSearchSheet(me: me),
+      builder: (ctx) => PlayerSearchSheet(me: me),
     );
   }
 
@@ -289,8 +296,7 @@ class _LeaderboardScreenState
 
     try {
       final user = await AuthService.instance
-          .ensureSignedInOnDemand(
-          interactive: true);
+          .ensureSignedInOnDemand(interactive: true);
       if (user != null) {
         _showSnack('Signed in successfully.');
         await _maybeAutoLoadCurrentTab();
@@ -306,16 +312,16 @@ class _LeaderboardScreenState
 
     final me = AuthService.instance.currentUser;
     if (me == null) {
-      _showSnack('Please sign in first.',
-          isError: true);
+      _showSnack('Please sign in first.', isError: true);
       return;
     }
 
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
-          builder: (_) =>
-          const LeaderboardProfileScreen()),
+        // ✅ lp_screen prefix
+        builder: (_) => const lp_screen.LeaderboardProfileScreen(),
+      ),
     );
     if (result == true) {
       await _ensurePeriodLoaded(
@@ -327,6 +333,7 @@ class _LeaderboardScreenState
     }
   }
 
+  // ✅ Fixed — pub_screen prefix দিয়ে call করা হচ্ছে
   Future<void> _openPublicProfile({
     required User me,
     required int rank,
@@ -339,14 +346,14 @@ class _LeaderboardScreenState
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) =>
-            PublicLeaderboardProfileScreen(
-              me: me,
-              entry: entry,
-              rank: rank,
-              selfProLocal: selfProLocal,
-              selfProVerified: selfProVerified,
-            ),
+        // ✅ pub_screen prefix
+        builder: (_) => pub_screen.PublicLeaderboardProfileScreen(
+          me: me,
+          entry: entry,
+          rank: rank,
+          selfProLocal: selfProLocal,
+          selfProVerified: selfProVerified,
+        ),
       ),
     );
   }
@@ -372,9 +379,7 @@ class _LeaderboardScreenState
 
     Future.microtask(() async {
       await _ensurePeriodLoaded(
-          period: nextPeriod,
-          syncBeforeFetch: false,
-          haptic: false);
+          period: nextPeriod, syncBeforeFetch: false, haptic: false);
     });
   }
 
@@ -385,15 +390,15 @@ class _LeaderboardScreenState
   Future<void> _maybeAutoLoadCurrentTab() async {
     final user = AuthService.instance.currentUser;
     if (user == null) return;
-    final local = DatabaseService
-        .getLeaderboardProfileForUid(user.uid);
+    final local = DatabaseService.getLeaderboardProfileForUid(user.uid);
     if (local == null || !local.isOptedIn) return;
     _activeUid = user.uid;
 
+    // ✅ Daily score update
+    await DatabaseService.updateLeaderboardDailyScoreIfNeeded();
+
     await _ensurePeriodLoaded(
-        period: _currentPeriod,
-        syncBeforeFetch: true,
-        haptic: false);
+        period: _currentPeriod, syncBeforeFetch: true, haptic: false);
   }
 
   Future<void> _ensurePeriodLoaded({
@@ -403,10 +408,8 @@ class _LeaderboardScreenState
     bool forceRefresh = false,
   }) async {
     if (!mounted) return;
-    final alreadyLoaded =
-        _topByPeriod[period] != null;
-    final currentlyLoading =
-        _loadingByPeriod[period] ?? false;
+    final alreadyLoaded = _topByPeriod[period] != null;
+    final currentlyLoading = _loadingByPeriod[period] ?? false;
     if (currentlyLoading) return;
     if (alreadyLoaded && !forceRefresh) return;
     if (haptic) HapticFeedback.lightImpact();
@@ -417,28 +420,25 @@ class _LeaderboardScreenState
     });
 
     try {
-      final user =
-          AuthService.instance.currentUser;
+      final user = AuthService.instance.currentUser;
       if (user == null) {
         throw const LeaderboardServiceException(
             'Please sign in to view the leaderboard.');
       }
 
-      if (_activeUid != null &&
-          _activeUid != user.uid) {
+      if (_activeUid != null && _activeUid != user.uid) {
         _resetAllCachesForUser(user.uid);
       }
       _activeUid = user.uid;
 
-      final profile = DatabaseService
-          .getLeaderboardProfileForUid(user.uid);
+      final profile =
+      DatabaseService.getLeaderboardProfileForUid(user.uid);
       if (profile == null) {
         throw const LeaderboardServiceException(
             'Please create your leaderboard profile first.');
       }
       if (!profile.isOptedIn) {
-        throw const LeaderboardServiceException(
-            'Leaderboard is turned off.');
+        throw const LeaderboardServiceException('Leaderboard is turned off.');
       }
 
       try {
@@ -447,60 +447,49 @@ class _LeaderboardScreenState
 
       if (syncBeforeFetch) {
         try {
-          await LeaderboardService.instance
-              .syncMyProfileToCloud();
+          await _syncToCloudThrottled();
         } catch (_) {}
       }
 
-      final List<LeaderboardEntry> top =
-      switch (period) {
+      final List<LeaderboardEntry> top = switch (period) {
         LeaderboardPeriod.daily =>
-        await LeaderboardService.instance
-            .fetchDailyLeaderboard(limit: 50),
+        await LeaderboardService.instance.fetchDailyLeaderboard(limit: 50),
         LeaderboardPeriod.weekly =>
-        await LeaderboardService.instance
-            .fetchWeeklyLeaderboard(limit: 50),
+        await LeaderboardService.instance.fetchWeeklyLeaderboard(limit: 50),
         LeaderboardPeriod.allTime =>
-        await LeaderboardService.instance
-            .fetchTop(limit: 50),
+        await LeaderboardService.instance.fetchTop(limit: 50),
       };
 
       final double myScore = switch (period) {
-        LeaderboardPeriod.daily =>
-            profile.dailyScore.toDouble(),
-        LeaderboardPeriod.weekly =>
-            profile.weeklyScore.toDouble(),
+        LeaderboardPeriod.daily => profile.dailyScore.toDouble(),
+        LeaderboardPeriod.weekly => profile.weeklyScore.toDouble(),
         LeaderboardPeriod.allTime => _safeDouble(
-            LeaderboardService.instance
-                .getCurrentLocalMetrics()[
-            'score']),
+            LeaderboardService.instance.getCurrentLocalMetrics()['score']),
       };
 
       int myRank = -1;
       try {
         myRank = switch (period) {
           LeaderboardPeriod.daily =>
-          await LeaderboardService.instance
-              .fetchMyRankByPeriod(
-              uid: user.uid,
-              period:
-              LeaderboardPeriod.daily,
-              myScore: myScore,
-              fallbackScanLimit: 500),
+          await LeaderboardService.instance.fetchMyRankByPeriod(
+            uid: user.uid,
+            period: LeaderboardPeriod.daily,
+            myScore: myScore,
+            fallbackScanLimit: 500,
+          ),
           LeaderboardPeriod.weekly =>
-          await LeaderboardService.instance
-              .fetchMyRankByPeriod(
-              uid: user.uid,
-              period:
-              LeaderboardPeriod.weekly,
-              myScore: myScore,
-              fallbackScanLimit: 500),
+          await LeaderboardService.instance.fetchMyRankByPeriod(
+            uid: user.uid,
+            period: LeaderboardPeriod.weekly,
+            myScore: myScore,
+            fallbackScanLimit: 500,
+          ),
           LeaderboardPeriod.allTime =>
-          await LeaderboardService.instance
-              .fetchMyRankExact(
-              uid: user.uid,
-              myScore: myScore,
-              fallbackScanLimit: 500),
+          await LeaderboardService.instance.fetchMyRankExact(
+            uid: user.uid,
+            myScore: myScore,
+            fallbackScanLimit: 500,
+          ),
         };
       } catch (_) {}
 
@@ -516,30 +505,45 @@ class _LeaderboardScreenState
           profile.cachedScore = myScore;
           profile.lastCloudSyncAt = DateTime.now();
           profile.touchUpdated();
-          await DatabaseService
-              .saveLeaderboardProfile(profile);
+          await DatabaseService.saveLeaderboardProfile(profile);
         } catch (_) {}
       }
 
+      // Weekly reset warning check
+      _checkWeeklyResetWarning();
       _animC.forward(from: 0);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _errorByPeriod[period] =
-          _prettyError(e));
+      setState(() => _errorByPeriod[period] = _prettyError(e));
     } finally {
-      if (mounted) {
-        setState(() =>
-        _loadingByPeriod[period] = false);
-      }
+      if (mounted) setState(() => _loadingByPeriod[period] = false);
+    }
+  }
+
+  // ✅ Throttled sync — 4 ঘণ্টায় একবার
+  Future<void> _syncToCloudThrottled() async {
+    final now = DateTime.now();
+    if (_lastSyncTime != null &&
+        now.difference(_lastSyncTime!).inHours < 4) {
+      debugPrint('⏳ Sync throttled');
+      return;
+    }
+    if (_syncInProgress) return;
+    _syncInProgress = true;
+    try {
+      await LeaderboardService.instance.syncMyProfileToCloud();
+      _lastSyncTime = now;
+      debugPrint('☁️ Throttled sync done');
+    } catch (e) {
+      debugPrint('⚠️ Throttled sync failed: $e');
+    } finally {
+      _syncInProgress = false;
     }
   }
 
   void _resetAllCachesForUser(String uid) {
     _activeUid = uid;
-    for (final p in [
-      LeaderboardPeriod.weekly,
-      LeaderboardPeriod.allTime,
-    ]) {
+    for (final p in [LeaderboardPeriod.weekly, LeaderboardPeriod.allTime]) {
       _topByPeriod[p] = null;
       _rankByPeriod[p] = -1;
       _loadingByPeriod[p] = false;
@@ -553,8 +557,8 @@ class _LeaderboardScreenState
     SoundService.playTap();
     setState(() => _syncing = true);
     try {
-      await LeaderboardService.instance
-          .syncMyProfileToCloud();
+      await LeaderboardService.instance.syncMyProfileToCloud();
+      _lastSyncTime = DateTime.now();
       if (!mounted) return;
       _showSnack('Synced successfully.');
       await _ensurePeriodLoaded(
@@ -565,9 +569,7 @@ class _LeaderboardScreenState
     } catch (e) {
       _showSnack(_prettyError(e), isError: true);
     } finally {
-      if (mounted) {
-        setState(() => _syncing = false);
-      }
+      if (mounted) setState(() => _syncing = false);
     }
   }
 
@@ -586,8 +588,7 @@ class _LeaderboardScreenState
     if (!mounted) return;
     final isSelf = entry.uid == me.uid;
     final isBlocked =
-    LeaderboardModerationService.isBlocked(
-        entry.uid);
+    LeaderboardModerationService.isBlocked(entry.uid);
     HapticFeedback.lightImpact();
     SoundService.playTap();
 
@@ -595,198 +596,158 @@ class _LeaderboardScreenState
       context: context,
       backgroundColor: Colors.transparent,
       builder: (ctx) {
-        final bg = (isDark
-            ? const Color(0xFF151C2F)
-            : Colors.white)
+        final bg = (isDark ? const Color(0xFF151C2F) : Colors.white)
             .withOpacity(isDark ? 0.92 : 0.96);
         return ClipRRect(
           borderRadius:
-          const BorderRadius.vertical(
-              top: Radius.circular(28)),
+          const BorderRadius.vertical(top: Radius.circular(28)),
           child: BackdropFilter(
-            filter: ImageFilter.blur(
-                sigmaX: 14, sigmaY: 14),
+            filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
             child: Container(
               decoration: BoxDecoration(
-                  color: bg,
-                  border: Border.all(
-                      color: isDark
-                          ? Colors.white
-                          .withOpacity(0.08)
-                          : Colors.black
-                          .withOpacity(
-                          0.08))),
+                color: bg,
+                border: Border.all(
+                  color: isDark
+                      ? Colors.white.withOpacity(0.08)
+                      : Colors.black.withOpacity(0.08),
+                ),
+              ),
               child: SafeArea(
                 top: false,
                 child: Padding(
-                  padding:
-                  const EdgeInsets.fromLTRB(
-                      18, 10, 18, 18),
+                  padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
                   child: Column(
-                    mainAxisSize:
-                    MainAxisSize.min,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Container(
-                          width: 44,
-                          height: 5,
-                          decoration: BoxDecoration(
-                              color: isDark
-                                  ? Colors
-                                  .white24
-                                  : Colors
-                                  .black12,
-                              borderRadius:
-                              BorderRadius
-                                  .circular(
-                                  3))),
+                        width: 44,
+                        height: 5,
+                        decoration: BoxDecoration(
+                          color: isDark ? Colors.white24 : Colors.black12,
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                      ),
                       const SizedBox(height: 14),
                       Row(children: [
                         Container(
-                            width: 44,
-                            height: 44,
-                            decoration: BoxDecoration(
-                                color: AppConfig
-                                    .primaryColor
-                                    .withOpacity(
-                                    0.15),
-                                shape: BoxShape
-                                    .circle),
-                            child: Center(
-                                child: Text(
-                                    entry.avatarEmoji
-                                        .isEmpty
-                                        ? '🙂'
-                                        : entry
-                                        .avatarEmoji,
-                                    style: const TextStyle(
-                                        fontSize:
-                                        22)))),
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color:
+                            AppConfig.primaryColor.withOpacity(0.15),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Center(
+                            child: Text(
+                              entry.avatarEmoji.isEmpty
+                                  ? '🙂'
+                                  : entry.avatarEmoji,
+                              style: const TextStyle(fontSize: 22),
+                            ),
+                          ),
+                        ),
                         const SizedBox(width: 12),
                         Expanded(
-                            child: Column(
-                                crossAxisAlignment:
-                                CrossAxisAlignment
-                                    .start,
-                                children: [
-                                  Text(
-                                      entry
-                                          .displayName,
-                                      style: TextStyle(
-                                          fontWeight:
-                                          FontWeight
-                                              .w900,
-                                          fontSize:
-                                          16,
-                                          color: isDark
-                                              ? Colors
-                                              .white
-                                              : Colors
-                                              .black87),
-                                      maxLines: 1,
-                                      overflow:
-                                      TextOverflow
-                                          .ellipsis),
-                                  const SizedBox(
-                                      height: 3),
-                                  Text(
-                                      'Rank #$rank • Score ${_getScoreForEntry(entry)} XP',
-                                      style: TextStyle(
-                                          fontSize:
-                                          12.5,
-                                          color: isDark
-                                              ? Colors
-                                              .white60
-                                              : Colors
-                                              .black54)),
-                                ])),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                entry.displayName,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 16,
+                                  color: isDark
+                                      ? Colors.white
+                                      : Colors.black87,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                'Rank #$rank • Score ${_getScoreForEntry(entry)} XP',
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  color: isDark
+                                      ? Colors.white60
+                                      : Colors.black54,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                         IconButton(
-                            onPressed: () =>
-                                Navigator.pop(
-                                    ctx),
-                            icon: Icon(
-                                Icons
-                                    .close_rounded,
-                                color: isDark
-                                    ? Colors
-                                    .white70
-                                    : Colors
-                                    .black54)),
+                          onPressed: () => Navigator.pop(ctx),
+                          icon: Icon(
+                            Icons.close_rounded,
+                            color:
+                            isDark ? Colors.white70 : Colors.black54,
+                          ),
+                        ),
                       ]),
                       const SizedBox(height: 14),
                       _actionTile(
-                          isDark: isDark,
-                          enabled: true,
-                          icon: isSelf
-                              ? Icons
-                              .edit_rounded
-                              : Icons
-                              .person_search_rounded,
-                          color: AppConfig
-                              .primaryColor,
-                          title: isSelf
-                              ? 'Edit Profile'
-                              : 'View Profile',
-                          subtitle: isSelf
-                              ? 'Customize your public profile'
-                              : 'See highlights and stats',
-                          onTap: () async {
-                            Navigator.pop(ctx);
-                            if (isSelf) {
-                              await _openProfileEditor();
-                            } else {
-                              await _openPublicProfile(
-                                  me: me,
-                                  entry: entry,
-                                  rank: rank,
-                                  selfProLocal:
-                                  selfProLocal,
-                                  selfProVerified:
-                                  selfProVerified);
-                            }
-                          }),
+                        isDark: isDark,
+                        enabled: true,
+                        icon: isSelf
+                            ? Icons.edit_rounded
+                            : Icons.person_search_rounded,
+                        color: AppConfig.primaryColor,
+                        title: isSelf ? 'Edit Profile' : 'View Profile',
+                        subtitle: isSelf
+                            ? 'Customize your public profile'
+                            : 'See highlights and stats',
+                        onTap: () async {
+                          Navigator.pop(ctx);
+                          if (isSelf) {
+                            await _openProfileEditor();
+                          } else {
+                            await _openPublicProfile(
+                              me: me,
+                              entry: entry,
+                              rank: rank,
+                              selfProLocal: selfProLocal,
+                              selfProVerified: selfProVerified,
+                            );
+                          }
+                        },
+                      ),
                       const SizedBox(height: 10),
                       _actionTile(
-                          isDark: isDark,
-                          enabled: !isSelf,
-                          icon:
-                          Icons.flag_outlined,
-                          color: AppConfig
-                              .warningColor,
-                          title: 'Report',
-                          subtitle:
-                          'Report inappropriate content',
-                          onTap: () async {
-                            Navigator.pop(ctx);
-                            await _openReportFlow(
-                                isDark: isDark,
-                                me: me,
-                                entry: entry,
-                                rank: rank);
-                          }),
+                        isDark: isDark,
+                        enabled: !isSelf,
+                        icon: Icons.flag_outlined,
+                        color: AppConfig.warningColor,
+                        title: 'Report',
+                        subtitle: 'Report inappropriate content',
+                        onTap: () async {
+                          Navigator.pop(ctx);
+                          await _openReportFlow(
+                            isDark: isDark,
+                            me: me,
+                            entry: entry,
+                            rank: rank,
+                          );
+                        },
+                      ),
                       const SizedBox(height: 10),
                       _actionTile(
-                          isDark: isDark,
-                          enabled: !isSelf,
-                          icon: isBlocked
-                              ? Icons
-                              .visibility_rounded
-                              : Icons
-                              .visibility_off_rounded,
-                          color:
-                          AppConfig.infoColor,
-                          title: isBlocked
-                              ? 'Unblock'
-                              : 'Block',
-                          subtitle: isBlocked
-                              ? 'Show this user again'
-                              : 'Hide this user',
-                          onTap: () async {
-                            Navigator.pop(ctx);
-                            await _toggleBlock(
-                                entry.uid,
-                                entry
-                                    .displayName);
-                          }),
+                        isDark: isDark,
+                        enabled: !isSelf,
+                        icon: isBlocked
+                            ? Icons.visibility_rounded
+                            : Icons.visibility_off_rounded,
+                        color: AppConfig.infoColor,
+                        title: isBlocked ? 'Unblock' : 'Block',
+                        subtitle: isBlocked
+                            ? 'Show this user again'
+                            : 'Hide this user',
+                        onTap: () async {
+                          Navigator.pop(ctx);
+                          await _toggleBlock(
+                              entry.uid, entry.displayName);
+                        },
+                      ),
                     ],
                   ),
                 ),
@@ -821,86 +782,78 @@ class _LeaderboardScreenState
         child: Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-              color: color.withOpacity(
-                  isDark ? 0.10 : 0.06),
-              borderRadius:
-              BorderRadius.circular(18),
-              border: Border.all(
-                  color: color.withOpacity(
-                      isDark ? 0.22 : 0.14))),
+            color: color.withOpacity(isDark ? 0.10 : 0.06),
+            borderRadius: BorderRadius.circular(18),
+            border:
+            Border.all(color: color.withOpacity(isDark ? 0.22 : 0.14)),
+          ),
           child: Row(children: [
             Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                    color:
-                    color.withOpacity(0.16),
-                    borderRadius:
-                    BorderRadius.circular(
-                        16)),
-                child:
-                Icon(icon, color: color)),
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.16),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Icon(icon, color: color),
+            ),
             const SizedBox(width: 12),
             Expanded(
-                child: Column(
-                    crossAxisAlignment:
-                    CrossAxisAlignment
-                        .start,
-                    children: [
-                      Text(title,
-                          style: TextStyle(
-                              fontWeight:
-                              FontWeight.w900,
-                              color: isDark
-                                  ? Colors.white
-                                  : Colors.black87),
-                          overflow:
-                          TextOverflow.ellipsis),
-                      const SizedBox(height: 3),
-                      Text(subtitle,
-                          style: TextStyle(
-                              fontSize: 12.5,
-                              height: 1.25,
-                              color: isDark
-                                  ? Colors.white60
-                                  : Colors.black54),
-                          overflow:
-                          TextOverflow.ellipsis),
-                    ])),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: isDark ? Colors.white : Colors.black87,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      height: 1.25,
+                      color: isDark ? Colors.white60 : Colors.black54,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
             const SizedBox(width: 10),
-            Icon(Icons.chevron_right_rounded,
-                color: isDark
-                    ? Colors.white24
-                    : Colors.black26),
+            Icon(
+              Icons.chevron_right_rounded,
+              color: isDark ? Colors.white24 : Colors.black26,
+            ),
           ]),
         ),
       ),
     );
   }
 
-  Future<void> _toggleBlock(
-      String uid, String name) async {
-    final isBlocked =
-    LeaderboardModerationService.isBlocked(
-        uid);
+  Future<void> _toggleBlock(String uid, String name) async {
+    final isBlocked = LeaderboardModerationService.isBlocked(uid);
     try {
       if (isBlocked) {
-        await LeaderboardModerationService
-            .unblockUid(uid);
+        await LeaderboardModerationService.unblockUid(uid);
         _showSnack('Unblocked "$name".');
       } else {
-        await LeaderboardModerationService
-            .blockUid(uid);
-        _showSnack('Blocked "$name".',
-            action: SnackBarAction(
-                label: 'UNDO',
-                textColor: Colors.white,
-                onPressed: () async {
-                  try {
-                    await LeaderboardModerationService
-                        .unblockUid(uid);
-                  } catch (_) {}
-                }));
+        await LeaderboardModerationService.blockUid(uid);
+        _showSnack(
+          'Blocked "$name".',
+          action: SnackBarAction(
+            label: 'UNDO',
+            textColor: Colors.white,
+            onPressed: () async {
+              try {
+                await LeaderboardModerationService.unblockUid(uid);
+              } catch (_) {}
+            },
+          ),
+        );
       }
     } catch (e) {
       _showSnack(_prettyError(e), isError: true);
@@ -913,34 +866,26 @@ class _LeaderboardScreenState
     required LeaderboardEntry entry,
     required int rank,
   }) async {
-    final can = await LeaderboardModerationService
-        .canReportNow();
+    final can = await LeaderboardModerationService.canReportNow();
     if (!can) {
-      _showSnack('Please wait before reporting.',
-          isError: true);
+      _showSnack('Please wait before reporting.', isError: true);
       return;
     }
-    final result =
-    await showDialog<ReportPayload>(
+    final result = await showDialog<ReportPayload>(
         context: context,
         builder: (_) => ReportDialog(
-            isDark: isDark,
-            targetName:
-            entry.displayName));
+            isDark: isDark, targetName: entry.displayName));
     if (result == null) return;
     HapticFeedback.mediumImpact();
     try {
-      await LeaderboardModerationService
-          .reportUser(
+      await LeaderboardModerationService.reportUser(
           targetUid: entry.uid,
           reasonId: result.reasonId,
           details: result.details,
-          targetDisplayName:
-          entry.displayName,
+          targetDisplayName: entry.displayName,
           targetScore: entry.score,
           targetRank: rank);
-      await LeaderboardModerationService
-          .markReportedNow();
+      await LeaderboardModerationService.markReportedNow();
       _showSnack('Report sent. Thank you.');
     } catch (e) {
       _showSnack(_prettyError(e), isError: true);
@@ -948,23 +893,216 @@ class _LeaderboardScreenState
   }
 
   LinearGradient _getDynamicTabGradient() {
-    if (_currentPeriod ==
-        LeaderboardPeriod.weekly) {
+    if (_currentPeriod == LeaderboardPeriod.weekly) {
       return const LinearGradient(
-          colors: [
-            Color(0xFFF355DA),
-            Color(0xFF7000FF)
-          ],
+          colors: [Color(0xFFF355DA), Color(0xFF7000FF)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight);
     }
     return const LinearGradient(
-        colors: [
-          Color(0xFFFFD700),
-          Color(0xFFFFA500)
-        ],
+        colors: [Color(0xFFFFD700), Color(0xFFFFA500)],
         begin: Alignment.topLeft,
         end: Alignment.bottomRight);
+  }
+
+  // ═══════════════════════════════════════
+  // ✅ WEEKLY RESET WARNING BANNER
+  // ═══════════════════════════════════════
+
+  Widget _buildWeeklyResetWarningBanner(bool isDark) {
+    if (!_showWeeklyResetWarning) return const SizedBox.shrink();
+
+    final timeText = _hoursUntilReset > 0
+        ? '$_hoursUntilReset hour${_hoursUntilReset != 1 ? 's' : ''}'
+        : 'less than 1 hour';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  const Color(0xFFFF6B6B).withOpacity(isDark ? 0.25 : 0.15),
+                  const Color(0xFFFFD700).withOpacity(isDark ? 0.15 : 0.08),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: const Color(0xFFFF6B6B).withOpacity(0.5),
+                width: 1.5,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFF6B6B).withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.warning_amber_rounded,
+                        color: Color(0xFFFF6B6B),
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '⚠️ Weekly Reset in $timeText!',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w900,
+                              color: isDark ? Colors.white : Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            'Your weekly score will reset soon.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color:
+                              isDark ? Colors.white60 : Colors.black54,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () =>
+                          setState(() => _showWeeklyResetWarning = false),
+                      icon: Icon(
+                        Icons.close_rounded,
+                        color: isDark ? Colors.white54 : Colors.black45,
+                        size: 18,
+                      ),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                // Last weekly score
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? Colors.black26
+                        : Colors.white.withOpacity(0.6),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: const Color(0xFFFFD700).withOpacity(0.4),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.emoji_events_rounded,
+                          color: Color(0xFFFFD700), size: 18),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'This Week\'s Score',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: isDark
+                                    ? Colors.white54
+                                    : Colors.black45,
+                              ),
+                            ),
+                            Text(
+                              '$_lastWeeklyScore XP',
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
+                                color: Color(0xFFFFD700),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            'LAST SCORE',
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w900,
+                              color: isDark
+                                  ? Colors.white38
+                                  : Colors.black38,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          Text(
+                            'Resets in $timeText',
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFFFF6B6B),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                // Motivational message
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppConfig.primaryColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                        color: AppConfig.primaryColor.withOpacity(0.2)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Text('🚀', style: TextStyle(fontSize: 16)),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Study more today to boost your final weekly rank before reset!',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color:
+                            isDark ? Colors.white70 : Colors.black54,
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   // ═══════════════════════════════════════
@@ -973,12 +1111,8 @@ class _LeaderboardScreenState
 
   Widget _glassCard(
       {required Widget child,
-        EdgeInsets padding =
-        const EdgeInsets.all(16)}) =>
-      LeaderboardGlassCard(
-          padding: padding,
-          borderRadius: 22,
-          child: child);
+        EdgeInsets padding = const EdgeInsets.all(16)}) =>
+      LeaderboardGlassCard(padding: padding, borderRadius: 22, child: child);
 
   Widget _buildHeaderCard({
     required bool isDark,
@@ -989,166 +1123,194 @@ class _LeaderboardScreenState
   }) {
     final rank = _currentRank;
     final score = switch (_currentPeriod) {
-      LeaderboardPeriod.daily =>
-          profile.dailyScore.toDouble(),
-      LeaderboardPeriod.weekly =>
-          profile.weeklyScore.toDouble(),
+      LeaderboardPeriod.daily => profile.dailyScore.toDouble(),
+      LeaderboardPeriod.weekly => profile.weeklyScore.toDouble(),
       LeaderboardPeriod.allTime => _safeDouble(
-          LeaderboardService.instance
-              .getCurrentLocalMetrics()[
-          'score']),
+          LeaderboardService.instance.getCurrentLocalMetrics()['score']),
     };
 
     final rankText = rank > 0 ? '#$rank' : '—';
-    final scoreText = score > 0
-        ? score.toStringAsFixed(0)
-        : '0';
+    final scoreText = score > 0 ? score.toStringAsFixed(0) : '0';
+    final isWeekly = _currentPeriod == LeaderboardPeriod.weekly;
+    final lastWeeklyScoreStr = DatabaseService.getSettingsValue<String>(
+      'leaderboard_last_weekly_score',
+      defaultValue: '',
+    );
 
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-          gradient: _getDynamicTabGradient(),
-          borderRadius:
-          BorderRadius.circular(24),
-          boxShadow: [
-            BoxShadow(
-                color: Colors.black
-                    .withOpacity(0.2),
-                blurRadius: 15,
-                offset: const Offset(0, 8))
-          ]),
-      child: Row(children: [
-        Stack(clipBehavior: Clip.none, children: [
-          Container(
-              width: 54,
-              height: 54,
-              decoration: BoxDecoration(
-                  color: Colors.white
-                      .withOpacity(0.25),
+        gradient: _getDynamicTabGradient(),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 15,
+            offset: const Offset(0, 8),
+          )
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(children: [
+            Stack(clipBehavior: Clip.none, children: [
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.25),
                   shape: BoxShape.circle,
-                  border: Border.all(
-                      color: Colors.white,
-                      width: 2)),
-              child: Center(
+                  border: Border.all(color: Colors.white, width: 2),
+                ),
+                child: Center(
                   child: Text(
-                      profile.avatarEmoji
-                          .trim()
-                          .isEmpty
-                          ? '🙂'
-                          : profile.avatarEmoji,
-                      style: const TextStyle(
-                          fontSize: 28)))),
-          if (selfProLocal || selfProVerified)
-            Positioned(
-                top: -6,
-                right: -6,
-                child: Container(
+                    profile.avatarEmoji.trim().isEmpty
+                        ? '🙂'
+                        : profile.avatarEmoji,
+                    style: const TextStyle(fontSize: 28),
+                  ),
+                ),
+              ),
+              if (selfProLocal || selfProVerified)
+                Positioned(
+                  top: -6,
+                  right: -6,
+                  child: Container(
                     width: 22,
                     height: 22,
                     decoration: BoxDecoration(
-                        color: const Color(
-                            0xFFFFD700)
-                            .withOpacity(isDark
-                            ? 0.18
-                            : 0.14),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                            color: const Color(
-                                0xFFFFD700)
-                                .withOpacity(
-                                0.35))),
-                    child: const Center(
-                        child: Text('👑',
-                            style: TextStyle(
-                                fontSize:
-                                12))))),
-        ]),
-        const SizedBox(width: 14),
-        Expanded(
-            child: Column(
-                crossAxisAlignment:
-                CrossAxisAlignment.start,
+                      color: const Color(0xFFFFD700)
+                          .withOpacity(isDark ? 0.18 : 0.14),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                          color: const Color(0xFFFFD700).withOpacity(0.35)),
+                    ),
+                    child:
+                    const Center(child: Text('👑', style: TextStyle(fontSize: 12))),
+                  ),
+                ),
+            ]),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(profile.displayName,
-                      style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight:
-                          FontWeight.w900,
-                          color: Colors.white),
-                      maxLines: 1,
-                      overflow:
-                      TextOverflow.ellipsis),
+                  Text(
+                    profile.displayName,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.white,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                   const SizedBox(height: 6),
                   GestureDetector(
-                      onTap: () {
-                        Clipboard.setData(
-                            ClipboardData(
-                                text: user.uid));
-                        _showSnack('UID Copied!');
-                      },
-                      child: Container(
-                          padding: const EdgeInsets
-                              .symmetric(
-                              horizontal: 8,
-                              vertical: 4),
-                          decoration: BoxDecoration(
-                              color: Colors.black
-                                  .withOpacity(
-                                  0.25),
-                              borderRadius:
-                              BorderRadius
-                                  .circular(8),
-                              border: Border.all(
-                                  color: Colors
-                                      .white24)),
-                          child: Row(
-                              mainAxisSize:
-                              MainAxisSize.min,
-                              children: [
-                                Text(
-                                    'UID: ${user.uid.length > 10 ? user.uid.substring(0, 10) : user.uid}...',
-                                    style: const TextStyle(
-                                        fontSize: 11,
-                                        fontWeight:
-                                        FontWeight
-                                            .w900,
-                                        color: Colors
-                                            .white)),
-                                const SizedBox(
-                                    width: 6),
-                                const Icon(
-                                    Icons
-                                        .copy_rounded,
-                                    size: 12,
-                                    color: Colors
-                                        .white),
-                              ]))),
-                ])),
-        const SizedBox(width: 10),
-        Container(
-            padding: const EdgeInsets.symmetric(
-                horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-                color: Colors.white
-                    .withOpacity(0.2),
-                borderRadius:
-                BorderRadius.circular(16)),
-            child: Column(children: [
-              Text(rankText,
+                    onTap: () {
+                      Clipboard.setData(ClipboardData(text: user.uid));
+                      _showSnack('UID Copied!');
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.25),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.white24),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'UID: ${user.uid.length > 10 ? user.uid.substring(0, 10) : user.uid}...',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          const Icon(Icons.copy_rounded,
+                              size: 12, color: Colors.white),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(children: [
+                Text(
+                  rankText,
                   style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight:
-                      FontWeight.w900,
-                      color: Colors.white)),
-              const SizedBox(height: 4),
-              Text('$scoreText XP',
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '$scoreText XP',
                   style: const TextStyle(
-                      fontSize: 10,
-                      fontWeight:
-                      FontWeight.w800,
-                      color: Colors.white)),
-            ])),
-      ]),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
+                ),
+              ]),
+            ),
+          ]),
+
+          // ✅ Weekly period এ last week score
+          if (isWeekly &&
+              lastWeeklyScoreStr.isNotEmpty &&
+              lastWeeklyScoreStr != '0') ...[
+            const SizedBox(height: 12),
+            Container(
+              padding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.white24),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.history_rounded,
+                      color: Colors.white70, size: 16),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Last Week: $lastWeeklyScoreStr XP',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white70,
+                    ),
+                  ),
+                  const Spacer(),
+                  const Text(
+                    'LAST RECORD',
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.white38,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -1164,289 +1326,244 @@ class _LeaderboardScreenState
     final medalColor = _getRankColor(rank);
     final scoreText = _getScoreForEntry(e);
     final isSelf = e.uid == me.uid;
-    final memberText =
-    _memberForText(e.joinedAtMs);
-    final explicitBadges =
-    _getExplicitBadgeNames(e.badgesUnlocked);
+    final memberText = _memberForText(e.joinedAtMs);
+    final explicitBadges = _getExplicitBadgeNames(e.badgesUnlocked);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-          color: isSelf
-              ? AppConfig.primaryColor
-              .withOpacity(0.12)
+        color: isSelf
+            ? AppConfig.primaryColor.withOpacity(0.12)
+            : (isDark ? const Color(0xFF151C2F) : Colors.white),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: showMedal
+              ? medalColor.withOpacity(0.5)
+              : (isSelf
+              ? AppConfig.primaryColor.withOpacity(0.4)
               : (isDark
-              ? const Color(0xFF151C2F)
-              : Colors.white),
-          borderRadius:
-          BorderRadius.circular(20),
-          border: Border.all(
-              color: showMedal
-                  ? medalColor.withOpacity(0.5)
-                  : (isSelf
-                  ? AppConfig.primaryColor
-                  .withOpacity(0.4)
-                  : (isDark
-                  ? Colors.white
-                  .withOpacity(0.06)
-                  : Colors.black
-                  .withOpacity(
-                  0.06)))),
-          boxShadow: [
-            BoxShadow(
-                color: showMedal
-                    ? medalColor
-                    .withOpacity(0.1)
-                    : Colors.black.withOpacity(
-                    isDark ? 0.12 : 0.05),
-                blurRadius: 18,
-                offset: const Offset(0, 8))
-          ]),
+              ? Colors.white.withOpacity(0.06)
+              : Colors.black.withOpacity(0.06))),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: showMedal
+                ? medalColor.withOpacity(0.1)
+                : Colors.black.withOpacity(isDark ? 0.12 : 0.05),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          )
+        ],
+      ),
       child: Row(children: [
         Container(
-            width: 48,
-            alignment: Alignment.center,
-            child: Text('#$rank',
-                style: TextStyle(
-                    fontSize:
-                    showMedal ? 20 : 16,
-                    fontWeight: FontWeight.w900,
-                    color: showMedal
-                        ? medalColor
-                        : (isDark
-                        ? Colors.white
-                        : Colors
-                        .black87)))),
+          width: 48,
+          alignment: Alignment.center,
+          child: Text(
+            '#$rank',
+            style: TextStyle(
+              fontSize: showMedal ? 20 : 16,
+              fontWeight: FontWeight.w900,
+              color: showMedal
+                  ? medalColor
+                  : (isDark ? Colors.white : Colors.black87),
+            ),
+          ),
+        ),
         const SizedBox(width: 8),
         Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-                color: AppConfig.primaryColor
-                    .withOpacity(0.15),
-                shape: BoxShape.circle,
-                border: Border.all(
-                    color: showMedal
-                        ? medalColor
-                        : Colors
-                        .transparent)),
-            child: Center(
-                child: Text(
-                    e.avatarEmoji.trim().isEmpty
-                        ? '🙂'
-                        : e.avatarEmoji,
-                    style: const TextStyle(
-                        fontSize: 24)))),
+          width: 46,
+          height: 46,
+          decoration: BoxDecoration(
+            color: AppConfig.primaryColor.withOpacity(0.15),
+            shape: BoxShape.circle,
+            border: Border.all(
+                color: showMedal ? medalColor : Colors.transparent),
+          ),
+          child: Center(
+            child: Text(
+              e.avatarEmoji.trim().isEmpty ? '🙂' : e.avatarEmoji,
+              style: const TextStyle(fontSize: 24),
+            ),
+          ),
+        ),
         const SizedBox(width: 12),
         Expanded(
-            child: GestureDetector(
-                behavior:
-                HitTestBehavior.translucent,
-                onTap: () => _openPublicProfile(
-                    me: me,
-                    entry: e,
-                    rank: rank,
-                    selfProLocal: selfProLocal,
-                    selfProVerified:
-                    selfProVerified),
-                child: Column(
-                    crossAxisAlignment:
-                    CrossAxisAlignment
-                        .start,
-                    children: [
-                      Row(children: [
-                        Flexible(
-                            child: Text(
-                                e.displayName,
-                                style: TextStyle(
-                                    fontSize:
-                                    15.5,
-                                    fontWeight:
-                                    FontWeight
-                                        .w900,
-                                    color: isDark
-                                        ? Colors
-                                        .white
-                                        : Colors
-                                        .black87),
-                                maxLines: 1,
-                                overflow:
-                                TextOverflow
-                                    .ellipsis)),
-                        if (isSelf) ...[
-                          const SizedBox(
-                              width: 6),
-                          Container(
-                              padding: const EdgeInsets
-                                  .symmetric(
-                                  horizontal: 8,
-                                  vertical: 3),
-                              decoration: BoxDecoration(
-                                  color: AppConfig
-                                      .primaryColor
-                                      .withOpacity(
-                                      0.15),
-                                  borderRadius:
-                                  BorderRadius
-                                      .circular(
-                                      999)),
-                              child: const Text(
-                                  'YOU',
-                                  style: TextStyle(
-                                      fontSize:
-                                      10,
-                                      fontWeight:
-                                      FontWeight
-                                          .w900,
-                                      color: AppConfig
-                                          .primaryColor))),
-                        ],
-                      ]),
-                      const SizedBox(height: 4),
-                      Text(memberText,
-                          style: TextStyle(
-                              fontSize: 11.8,
-                              color: isDark
-                                  ? Colors
-                                  .white54
-                                  : Colors
-                                  .black45),
-                          maxLines: 1,
-                          overflow: TextOverflow
-                              .ellipsis),
-                      if (explicitBadges
-                          .isNotEmpty) ...[
-                        const SizedBox(height: 6),
-                        Wrap(
-                            spacing: 6,
-                            runSpacing: 6,
-                            children: explicitBadges
-                                .take(2)
-                                .map((b) => Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal:
-                                    8,
-                                    vertical:
-                                    3),
-                                decoration: BoxDecoration(
-                                    color: isDark
-                                        ? Colors
-                                        .white10
-                                        : Colors.black.withOpacity(
-                                        0.05),
-                                    borderRadius:
-                                    BorderRadius.circular(
-                                        8),
-                                    border: Border.all(
-                                        color: AppConfig.primaryColor.withOpacity(0.3))),
-                                child: Text(b, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: AppConfig.primaryColor))))
-                                .toList()),
-                      ],
-                    ]))),
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: () => _openPublicProfile(
+              me: me,
+              entry: e,
+              rank: rank,
+              selfProLocal: selfProLocal,
+              selfProVerified: selfProVerified,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Flexible(
+                    child: Text(
+                      e.displayName,
+                      style: TextStyle(
+                        fontSize: 15.5,
+                        fontWeight: FontWeight.w900,
+                        color: isDark ? Colors.white : Colors.black87,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (isSelf) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: AppConfig.primaryColor.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: const Text(
+                        'YOU',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                          color: AppConfig.primaryColor,
+                        ),
+                      ),
+                    ),
+                  ],
+                ]),
+                const SizedBox(height: 4),
+                Text(
+                  memberText,
+                  style: TextStyle(
+                    fontSize: 11.8,
+                    color: isDark ? Colors.white54 : Colors.black45,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (explicitBadges.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: explicitBadges
+                        .take(2)
+                        .map((b) => Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? Colors.white10
+                            : Colors.black.withOpacity(0.05),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                            color: AppConfig.primaryColor
+                                .withOpacity(0.3)),
+                      ),
+                      child: Text(
+                        b,
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                          color: AppConfig.primaryColor,
+                        ),
+                      ),
+                    ))
+                        .toList(),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
         const SizedBox(width: 10),
         Column(
-            crossAxisAlignment:
-            CrossAxisAlignment.end,
-            children: [
-              Text('$scoreText XP',
-                  style: TextStyle(
-                      fontSize: 13,
-                      fontWeight:
-                      FontWeight.w900,
-                      color: showMedal
-                          ? medalColor
-                          : AppConfig
-                          .accentColor)),
-              IconButton(
-                  tooltip: 'Actions',
-                  onPressed: () =>
-                      _showUserActionsSheet(
-                          isDark: isDark,
-                          me: me,
-                          rank: rank,
-                          entry: e,
-                          selfProLocal:
-                          selfProLocal,
-                          selfProVerified:
-                          selfProVerified),
-                  icon: Icon(
-                      Icons.more_vert_rounded,
-                      color: isDark
-                          ? Colors.white70
-                          : Colors.black54,
-                      size: 20)),
-            ]),
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              '$scoreText XP',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+                color: showMedal ? medalColor : AppConfig.accentColor,
+              ),
+            ),
+            IconButton(
+              tooltip: 'Actions',
+              onPressed: () => _showUserActionsSheet(
+                isDark: isDark,
+                me: me,
+                rank: rank,
+                entry: e,
+                selfProLocal: selfProLocal,
+                selfProVerified: selfProVerified,
+              ),
+              icon: Icon(
+                Icons.more_vert_rounded,
+                color: isDark ? Colors.white70 : Colors.black54,
+                size: 20,
+              ),
+            ),
+          ],
+        ),
       ]),
     );
   }
 
-  // ✅ Tab bar — Removed "YOU LIKED"
   Widget _buildGlassTabBar(bool isDark) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(18),
       child: BackdropFilter(
-        filter: ImageFilter.blur(
-            sigmaX: 12, sigmaY: 12),
+        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
         child: Container(
           padding: const EdgeInsets.all(4),
           decoration: BoxDecoration(
-              color: (isDark
-                  ? const Color(0xFF151C2F)
-                  : Colors.white)
-                  .withOpacity(
-                  isDark ? 0.65 : 0.75),
-              borderRadius:
-              BorderRadius.circular(18),
-              border: Border.all(
-                  color: isDark
-                      ? Colors.white
-                      .withOpacity(0.08)
-                      : Colors.black
-                      .withOpacity(0.08)),
-              boxShadow: [
-                BoxShadow(
-                    color: Colors.black
-                        .withOpacity(
-                        isDark ? 0.20 : 0.06),
-                    blurRadius: 20,
-                    offset: const Offset(0, 8))
-              ]),
+            color: (isDark ? const Color(0xFF151C2F) : Colors.white)
+                .withOpacity(isDark ? 0.65 : 0.75),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: isDark
+                  ? Colors.white.withOpacity(0.08)
+                  : Colors.black.withOpacity(0.08),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color:
+                Colors.black.withOpacity(isDark ? 0.20 : 0.06),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
+              )
+            ],
+          ),
           child: TabBar(
             controller: _tabController,
             indicator: BoxDecoration(
-                gradient: LinearGradient(colors: [
-                  AppConfig.primaryColor
-                      .withOpacity(0.95),
-                  AppConfig.primaryColor
-                      .withOpacity(0.75),
-                ]),
-                borderRadius:
-                BorderRadius.circular(14),
-                boxShadow: [
-                  BoxShadow(
-                      color: AppConfig.primaryColor
-                          .withOpacity(0.35),
-                      blurRadius: 12,
-                      offset:
-                      const Offset(0, 4))
-                ]),
-            indicatorSize:
-            TabBarIndicatorSize.tab,
+              gradient: LinearGradient(colors: [
+                AppConfig.primaryColor.withOpacity(0.95),
+                AppConfig.primaryColor.withOpacity(0.75),
+              ]),
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [
+                BoxShadow(
+                  color: AppConfig.primaryColor.withOpacity(0.35),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                )
+              ],
+            ),
+            indicatorSize: TabBarIndicatorSize.tab,
             dividerColor: Colors.transparent,
             labelStyle: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w900),
-            unselectedLabelStyle:
-            const TextStyle(
-                fontSize: 13.5,
-                fontWeight:
-                FontWeight.w700),
+                fontSize: 14, fontWeight: FontWeight.w900),
+            unselectedLabelStyle: const TextStyle(
+                fontSize: 13.5, fontWeight: FontWeight.w700),
             labelColor: Colors.white,
-            unselectedLabelColor: isDark
-                ? Colors.white60
-                : Colors.black54,
-            // ✅ Only 2 Tabs
+            unselectedLabelColor:
+            isDark ? Colors.white60 : Colors.black54,
             tabs: const [
               Tab(text: 'WEEKLY'),
               Tab(text: 'ALL-TIME'),
@@ -1463,233 +1580,185 @@ class _LeaderboardScreenState
 
   Widget _buildSignedOutState(bool isDark) {
     return ListView(
-        padding: const EdgeInsets.fromLTRB(
-            18, 14, 18, 18),
-        children: [
-          _glassCard(
-              child: Row(children: [
+      padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
+      children: [
+        _glassCard(
+          child: Row(children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: AppConfig.infoColor.withOpacity(0.14),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Icon(Icons.lock_outline_rounded,
+                  color: AppConfig.infoColor),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Sign in to view the leaderboard.',
+                style: TextStyle(
+                  height: 1.35,
+                  color: isDark ? Colors.white70 : Colors.black87,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ]),
+        ),
+        const SizedBox(height: 14),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: _ensureSignedIn,
+            icon: const Icon(Icons.login_rounded),
+            label: const Text('Sign in with Google',
+                style: TextStyle(fontWeight: FontWeight.w900)),
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNoProfileState(bool isDark, User user) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
+      children: [
+        _glassCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
                 Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                        color: AppConfig.infoColor
-                            .withOpacity(0.14),
-                        borderRadius:
-                        BorderRadius.circular(
-                            16)),
-                    child: const Icon(
-                        Icons.lock_outline_rounded,
-                        color: AppConfig.infoColor)),
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: AppConfig.primaryColor.withOpacity(0.14),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Icon(Icons.person_add_alt_1_rounded,
+                      color: AppConfig.primaryColor),
+                ),
                 const SizedBox(width: 12),
                 Expanded(
-                    child: Text(
-                        'Sign in to view the leaderboard.',
-                        style: TextStyle(
-                            height: 1.35,
-                            color: isDark
-                                ? Colors.white70
-                                : Colors.black87,
-                            fontWeight:
-                            FontWeight.w600))),
-              ])),
-          const SizedBox(height: 14),
-          SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                  onPressed: _ensureSignedIn,
-                  icon: const Icon(
-                      Icons.login_rounded),
-                  label: const Text(
-                      'Sign in with Google',
-                      style: TextStyle(
-                          fontWeight:
-                          FontWeight.w900)),
+                  child: Text(
+                    'Create your leaderboard profile.',
+                    style: TextStyle(
+                      height: 1.35,
+                      color: isDark ? Colors.white70 : Colors.black87,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ]),
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _openProfileEditor,
+                  icon: const Icon(Icons.edit_rounded),
+                  label: const Text('Create Profile',
+                      style: TextStyle(fontWeight: FontWeight.w900)),
                   style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets
-                          .symmetric(
-                          vertical: 14),
-                      shape:
-                      RoundedRectangleBorder(
-                          borderRadius:
-                          BorderRadius
-                              .circular(
-                              16))))),
-        ]);
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 
-  Widget _buildNoProfileState(
-      bool isDark, User user) {
+  Widget _buildOptedOutState(
+      bool isDark, User user, LeaderboardProfileModel profile) {
     return ListView(
-        padding: const EdgeInsets.fromLTRB(
-            18, 14, 18, 18),
-        children: [
-          _glassCard(
-              child: Column(
-                  crossAxisAlignment:
-                  CrossAxisAlignment.start,
-                  children: [
-                    Row(children: [
-                      Container(
-                          width: 46,
-                          height: 46,
-                          decoration: BoxDecoration(
-                              color: AppConfig
-                                  .primaryColor
-                                  .withOpacity(0.14),
-                              borderRadius:
-                              BorderRadius
-                                  .circular(16)),
-                          child: const Icon(
-                              Icons
-                                  .person_add_alt_1_rounded,
-                              color: AppConfig
-                                  .primaryColor)),
-                      const SizedBox(width: 12),
-                      Expanded(
-                          child: Text(
-                              'Create your leaderboard profile.',
-                              style: TextStyle(
-                                  height: 1.35,
-                                  color: isDark
-                                      ? Colors
-                                      .white70
-                                      : Colors
-                                      .black87,
-                                  fontWeight:
-                                  FontWeight
-                                      .w700))),
-                    ]),
-                    const SizedBox(height: 14),
-                    SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                            onPressed:
-                            _openProfileEditor,
-                            icon: const Icon(
-                                Icons.edit_rounded),
-                            label: const Text(
-                                'Create Profile',
-                                style: TextStyle(
-                                    fontWeight:
-                                    FontWeight
-                                        .w900)),
-                            style: ElevatedButton
-                                .styleFrom(
-                                padding: const EdgeInsets
-                                    .symmetric(
-                                    vertical: 14),
-                                shape: RoundedRectangleBorder(
-                                    borderRadius:
-                                    BorderRadius
-                                        .circular(
-                                        16))))),
-                  ])),
-        ]);
+      padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
+      children: [
+        _glassCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Leaderboard is turned off',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                  color: isDark ? Colors.white : Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _openProfileEditor,
+                  icon: const Icon(Icons.tune_rounded),
+                  label: const Text('Edit Profile',
+                      style: TextStyle(fontWeight: FontWeight.w900)),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 
-  Widget _buildOptedOutState(bool isDark, User user,
-      LeaderboardProfileModel profile) {
+  Widget _buildErrorState(bool isDark, String error) {
     return ListView(
-        padding: const EdgeInsets.fromLTRB(
-            18, 14, 18, 18),
-        children: [
-          _glassCard(
-              child: Column(
-                  crossAxisAlignment:
-                  CrossAxisAlignment.start,
-                  children: [
-                    Text('Leaderboard is turned off',
-                        style: TextStyle(
-                            fontSize: 18,
-                            fontWeight:
-                            FontWeight.w900,
-                            color: isDark
-                                ? Colors.white
-                                : Colors.black87)),
-                    const SizedBox(height: 14),
-                    SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                            onPressed:
-                            _openProfileEditor,
-                            icon: const Icon(
-                                Icons.tune_rounded),
-                            label: const Text(
-                                'Edit Profile',
-                                style: TextStyle(
-                                    fontWeight:
-                                    FontWeight
-                                        .w900)),
-                            style: ElevatedButton
-                                .styleFrom(
-                                padding: const EdgeInsets
-                                    .symmetric(
-                                    vertical: 14),
-                                shape: RoundedRectangleBorder(
-                                    borderRadius:
-                                    BorderRadius
-                                        .circular(
-                                        16))))),
-                  ])),
-        ]);
-  }
-
-  Widget _buildErrorState(
-      bool isDark, String error) {
-    return ListView(
-        padding: const EdgeInsets.fromLTRB(
-            18, 14, 18, 18),
-        children: [
-          _glassCard(
-              child: Column(
-                  crossAxisAlignment:
-                  CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                        error.isEmpty
-                            ? 'Something went wrong.'
-                            : error,
-                        style: TextStyle(
-                            height: 1.35,
-                            color: isDark
-                                ? Colors.white70
-                                : Colors.black87,
-                            fontWeight:
-                            FontWeight.w700)),
-                    const SizedBox(height: 14),
-                    SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                            onPressed: () =>
-                                _ensurePeriodLoaded(
-                                    period:
-                                    _currentPeriod,
-                                    syncBeforeFetch:
-                                    false,
-                                    haptic: true,
-                                    forceRefresh:
-                                    true),
-                            icon: const Icon(
-                                Icons
-                                    .refresh_rounded),
-                            label: const Text(
-                                'Retry',
-                                style: TextStyle(
-                                    fontWeight:
-                                    FontWeight
-                                        .w900)),
-                            style: ElevatedButton
-                                .styleFrom(
-                                padding: const EdgeInsets
-                                    .symmetric(
-                                    vertical: 14),
-                                shape: RoundedRectangleBorder(
-                                    borderRadius:
-                                    BorderRadius
-                                        .circular(
-                                        16))))),
-                  ])),
-        ]);
+      padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
+      children: [
+        _glassCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                error.isEmpty ? 'Something went wrong.' : error,
+                style: TextStyle(
+                  height: 1.35,
+                  color: isDark ? Colors.white70 : Colors.black87,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () => _ensurePeriodLoaded(
+                    period: _currentPeriod,
+                    syncBeforeFetch: false,
+                    haptic: true,
+                    forceRefresh: true,
+                  ),
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('Retry',
+                      style: TextStyle(fontWeight: FontWeight.w900)),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _buildLeaderboardBody({
@@ -1704,77 +1773,69 @@ class _LeaderboardScreenState
     return RefreshIndicator(
       color: AppConfig.primaryColor,
       onRefresh: () => _ensurePeriodLoaded(
-          period: _currentPeriod,
-          syncBeforeFetch: true,
-          haptic: false,
-          forceRefresh: true),
-      child:
-      ValueListenableBuilder<Set<String>>(
+        period: _currentPeriod,
+        syncBeforeFetch: true,
+        haptic: false,
+        forceRefresh: true,
+      ),
+      child: ValueListenableBuilder<Set<String>>(
         valueListenable:
-        LeaderboardModerationService
-            .blockedUidsNotifier,
+        LeaderboardModerationService.blockedUidsNotifier,
         builder: (context, blockedSet, _) {
-          final blockedCount =
-              blockedSet.length;
+          final blockedCount = blockedSet.length;
           final visibleTiles = <Widget>[];
-          for (int i = 0;
-          i < top.length;
-          i++) {
+          for (int i = 0; i < top.length; i++) {
             final e = top[i];
-            if (blockedSet.contains(e.uid))
-              continue;
+            if (blockedSet.contains(e.uid)) continue;
             visibleTiles.add(_buildEntryTile(
-                isDark: isDark,
-                me: user,
-                rank: i + 1,
-                e: e,
-                selfProLocal: selfProLocal,
-                selfProVerified:
-                selfProVerified));
+              isDark: isDark,
+              me: user,
+              rank: i + 1,
+              e: e,
+              selfProLocal: selfProLocal,
+              selfProVerified: selfProVerified,
+            ));
           }
 
           return ListView(
-            padding: const EdgeInsets.fromLTRB(
-                18, 14, 18, 18),
-            physics:
-            const BouncingScrollPhysics(
-                parent:
-                AlwaysScrollableScrollPhysics()),
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
+            physics: const BouncingScrollPhysics(
+                parent: AlwaysScrollableScrollPhysics()),
             children: [
               _buildHeaderCard(
-                  isDark: isDark,
-                  user: user,
-                  profile: profile,
-                  selfProLocal: selfProLocal,
-                  selfProVerified:
-                  selfProVerified),
+                isDark: isDark,
+                user: user,
+                profile: profile,
+                selfProLocal: selfProLocal,
+                selfProVerified: selfProVerified,
+              ),
               const SizedBox(height: 14),
+
+              // ✅ Weekly Reset Warning Banner
+              _buildWeeklyResetWarningBanner(isDark),
+
               Row(children: [
                 Expanded(
-                    child: OutlinedButton.icon(
-                        onPressed:
-                        _openProfileEditor,
-                        icon: const Icon(
-                            Icons.edit_rounded,
-                            size: 18),
-                        label: const Text(
-                            'Edit Profile'))),
+                  child: OutlinedButton.icon(
+                    onPressed: _openProfileEditor,
+                    icon: const Icon(Icons.edit_rounded, size: 18),
+                    label: const Text('Edit Profile'),
+                  ),
+                ),
                 const SizedBox(width: 10),
                 Expanded(
-                    child: OutlinedButton.icon(
-                        onPressed: _isAnyBusy
-                            ? null
-                            : _syncAndReloadCurrent,
-                        icon: Icon(
-                            _syncing
-                                ? Icons
-                                .hourglass_top_rounded
-                                : Icons
-                                .sync_rounded,
-                            size: 18),
-                        label: Text(_syncing
-                            ? 'Syncing...'
-                            : 'Sync'))),
+                  child: OutlinedButton.icon(
+                    onPressed:
+                    _isAnyBusy ? null : _syncAndReloadCurrent,
+                    icon: Icon(
+                      _syncing
+                          ? Icons.hourglass_top_rounded
+                          : Icons.sync_rounded,
+                      size: 18,
+                    ),
+                    label: Text(_syncing ? 'Syncing...' : 'Sync'),
+                  ),
+                ),
               ]),
               const SizedBox(height: 14),
               _buildGlassTabBar(isDark),
@@ -1782,119 +1843,92 @@ class _LeaderboardScreenState
 
               if (_isCurrentLoading)
                 Container(
-                  margin:
-                  const EdgeInsets.only(
-                      bottom: 10),
-                  padding: const EdgeInsets
-                      .symmetric(
-                      horizontal: 12,
-                      vertical: 10),
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 10),
                   decoration: BoxDecoration(
-                      color: (isDark
-                          ? Colors.white
-                          : Colors.black)
-                          .withOpacity(0.04),
-                      borderRadius:
-                      BorderRadius
-                          .circular(16),
-                      border: Border.all(
-                          color: (isDark
-                              ? Colors
-                              .white
-                              : Colors
-                              .black)
-                              .withOpacity(
-                              0.06))),
+                    color: (isDark ? Colors.white : Colors.black)
+                        .withOpacity(0.04),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: (isDark ? Colors.white : Colors.black)
+                          .withOpacity(0.06),
+                    ),
+                  ),
                   child: Row(children: [
                     const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child:
-                        CircularProgressIndicator(
-                            strokeWidth:
-                            2.4,
-                            color: AppConfig
-                                .primaryColor)),
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2.4,
+                          color: AppConfig.primaryColor),
+                    ),
                     const SizedBox(width: 10),
                     Expanded(
-                        child: Text(
-                            'Loading...',
-                            style: TextStyle(
-                                fontWeight:
-                                FontWeight
-                                    .w700,
-                                color: isDark
-                                    ? Colors
-                                    .white70
-                                    : Colors
-                                    .black54))),
+                      child: Text(
+                        'Loading...',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color:
+                          isDark ? Colors.white70 : Colors.black54,
+                        ),
+                      ),
+                    ),
                   ]),
                 )
               else if (_currentError.isNotEmpty &&
                   top.isEmpty &&
                   !_isCurrentLoading)
                 _glassCard(
-                    child: Text(
-                        _currentError,
-                        style: TextStyle(
-                            height: 1.35,
-                            color: isDark
-                                ? Colors
-                                .white70
-                                : Colors
-                                .black87,
-                            fontWeight:
-                            FontWeight
-                                .w700)))
-              else if (top.isEmpty &&
-                    !_isCurrentLoading)
+                  child: Text(
+                    _currentError,
+                    style: TextStyle(
+                      height: 1.35,
+                      color: isDark ? Colors.white70 : Colors.black87,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                )
+              else if (top.isEmpty && !_isCurrentLoading)
                   _glassCard(
-                      child: Text(
-                          'No players yet.',
-                          style: TextStyle(
-                              color: isDark
-                                  ? Colors
-                                  .white70
-                                  : Colors
-                                  .black87,
-                              fontWeight:
-                              FontWeight
-                                  .w700)))
-                else if (visibleTiles.isEmpty &&
-                      top.isNotEmpty)
+                    child: Text(
+                      'No players yet.',
+                      style: TextStyle(
+                        color: isDark ? Colors.white70 : Colors.black87,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  )
+                else if (visibleTiles.isEmpty && top.isNotEmpty)
                     _glassCard(
-                        child: Text(
-                            'All entries blocked.',
-                            style: TextStyle(
-                                color: isDark
-                                    ? Colors
-                                    .white70
-                                    : Colors
-                                    .black87,
-                                fontWeight:
-                                FontWeight
-                                    .w700)))
+                      child: Text(
+                        'All entries blocked.',
+                        style: TextStyle(
+                          color: isDark ? Colors.white70 : Colors.black87,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    )
                   else
                     FadeTransition(
-                        opacity: _fade,
-                        child: SlideTransition(
-                            position: _slide,
-                            child: Column(
-                                children:
-                                visibleTiles))),
+                      opacity: _fade,
+                      child: SlideTransition(
+                        position: _slide,
+                        child: Column(children: visibleTiles),
+                      ),
+                    ),
+
               const SizedBox(height: 10),
               if (blockedCount > 0)
                 Text(
-                    'Blocked: $blockedCount hidden',
-                    textAlign:
-                    TextAlign.center,
-                    style: TextStyle(
-                        fontSize: 11.5,
-                        color: isDark
-                            ? Colors.white38
-                            : Colors.black38,
-                        fontWeight:
-                        FontWeight.w600)),
+                  'Blocked: $blockedCount hidden',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: isDark ? Colors.white38 : Colors.black38,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
             ],
           );
         },
@@ -1909,160 +1943,109 @@ class _LeaderboardScreenState
   @override
   Widget build(BuildContext context) {
     final isDark =
-        Theme.of(context).brightness ==
-            Brightness.dark;
+        Theme.of(context).brightness == Brightness.dark;
 
     return ValueListenableBuilder<User?>(
-      valueListenable:
-      AuthService.instance.userNotifier,
+      valueListenable: AuthService.instance.userNotifier,
       builder: (context, user, _) {
         final hasUser = user != null;
         LeaderboardProfileModel? profile;
         if (hasUser) {
-          profile = DatabaseService
-              .getLeaderboardProfileForUid(
+          profile = DatabaseService.getLeaderboardProfileForUid(
               user.uid);
         }
-        final selfProLocal =
-        DatabaseService.isProOrVipUser();
+        final selfProLocal = DatabaseService.isProOrVipUser();
 
         if (hasUser &&
             _activeUid != null &&
             _activeUid != user!.uid) {
-          WidgetsBinding.instance
-              .addPostFrameCallback((_) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
-            setState(() =>
-                _resetAllCachesForUser(
-                    user.uid));
+            setState(() => _resetAllCachesForUser(user.uid));
           });
         }
 
         return ValueListenableBuilder<bool>(
-          valueListenable: PurchaseService
-              .proVerifiedNotifier,
-          builder:
-              (context, proVerified, __) {
-            final selfProVerified =
-                proVerified;
+          valueListenable: PurchaseService.proVerifiedNotifier,
+          builder: (context, proVerified, __) {
+            final selfProVerified = proVerified;
             final canShowLeaderboard =
-                hasUser &&
-                    profile != null &&
-                    profile.isOptedIn;
+                hasUser && profile != null && profile.isOptedIn;
 
             return Scaffold(
               backgroundColor: isDark
                   ? const Color(0xFF0B1020)
                   : const Color(0xFFF7F8FC),
               appBar: AppBar(
-                title: const Text(
-                    'Leaderboard'),
+                title: const Text('Leaderboard'),
                 actions: [
                   if (hasUser)
                     IconButton(
-                        icon: const Icon(
-                            Icons
-                                .search_rounded),
-                        color: AppConfig
-                            .primaryColor,
-                        onPressed: () =>
-                            _showSearchSheet(
-                                context,
-                                user!),
-                        tooltip:
-                        'Search Player'),
+                      icon: const Icon(Icons.search_rounded),
+                      color: AppConfig.primaryColor,
+                      onPressed: () =>
+                          _showSearchSheet(context, user!),
+                      tooltip: 'Search Player',
+                    ),
                   if (hasUser)
                     IconButton(
-                        icon: const Icon(Icons
-                            .chat_bubble_rounded),
-                        color: AppConfig
-                            .primaryColor,
-                        onPressed: _openInbox,
-                        tooltip: 'Messages'),
+                      icon: const Icon(Icons.chat_bubble_rounded),
+                      color: AppConfig.primaryColor,
+                      onPressed: _openInbox,
+                      tooltip: 'Messages',
+                    ),
                   if (hasUser)
                     IconButton(
-                        tooltip: 'My Profile',
-                        onPressed:
-                        _openProfileEditor,
-                        icon: const Icon(Icons
-                            .person_rounded),
-                        color: AppConfig
-                            .primaryColor),
+                      tooltip: 'My Profile',
+                      onPressed: _openProfileEditor,
+                      icon: const Icon(Icons.person_rounded),
+                      color: AppConfig.primaryColor,
+                    ),
                   const SizedBox(width: 8),
                 ],
               ),
               body: AnimatedSwitcher(
-                duration: const Duration(
-                    milliseconds: 350),
+                duration: const Duration(milliseconds: 350),
                 child: !hasUser
-                    ? _buildSignedOutState(
-                    isDark)
+                    ? _buildSignedOutState(isDark)
                     : (profile == null)
-                    ? _buildNoProfileState(
-                    isDark, user!)
+                    ? _buildNoProfileState(isDark, user!)
                     : (!profile.isOptedIn)
                     ? _buildOptedOutState(
-                    isDark,
-                    user!,
-                    profile)
-                    : (_currentError
-                    .isNotEmpty &&
-                    _currentTop
-                        .isEmpty &&
+                    isDark, user!, profile)
+                    : (_currentError.isNotEmpty &&
+                    _currentTop.isEmpty &&
                     !_isCurrentLoading)
                     ? _buildErrorState(
-                    isDark,
-                    _currentError)
+                    isDark, _currentError)
                     : _buildLeaderboardBody(
-                    isDark:
-                    isDark,
-                    user:
-                    user!,
-                    profile:
-                    profile,
-                    selfProLocal:
-                    selfProLocal,
-                    selfProVerified:
-                    selfProVerified),
+                  isDark: isDark,
+                  user: user!,
+                  profile: profile,
+                  selfProLocal: selfProLocal,
+                  selfProVerified:
+                  selfProVerified,
+                ),
               ),
-              // ✅ FAB — Refresh only (no Add Post)
-              floatingActionButton:
-              canShowLeaderboard
-                  ? FloatingActionButton
-                  .extended(
+              floatingActionButton: canShowLeaderboard
+                  ? FloatingActionButton.extended(
                 onPressed: _isAnyBusy
                     ? null
-                    : () =>
-                    _ensurePeriodLoaded(
-                      period:
-                      _currentPeriod,
-                      syncBeforeFetch:
-                      true,
-                      haptic:
-                      true,
-                      forceRefresh:
-                      true,
-                    ),
-                backgroundColor:
-                AppConfig
-                    .primaryColor,
-                foregroundColor:
-                Colors.white,
+                    : () => _ensurePeriodLoaded(
+                  period: _currentPeriod,
+                  syncBeforeFetch: true,
+                  haptic: true,
+                  forceRefresh: true,
+                ),
+                backgroundColor: AppConfig.primaryColor,
+                foregroundColor: Colors.white,
                 icon: Icon(_isAnyBusy
-                    ? Icons
-                    .hourglass_top_rounded
-                    : Icons
-                    .refresh_rounded),
+                    ? Icons.hourglass_top_rounded
+                    : Icons.refresh_rounded),
                 label: Text(
-                  _isAnyBusy
-                      ? 'Loading...'
-                      : 'Refresh',
-                  style:
-                  const TextStyle(
-                    fontWeight:
-                    FontWeight
-                        .w900,
-                  ),
+                  _isAnyBusy ? 'Loading...' : 'Refresh',
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w900),
                 ),
               )
                   : null,
@@ -2078,8 +2061,7 @@ class _LeaderboardScreenState
 // SHARED WIDGETS
 // ═══════════════════════════════════════════════
 
-class LeaderboardGlassCard
-    extends StatelessWidget {
+class LeaderboardGlassCard extends StatelessWidget {
   const LeaderboardGlassCard(
       {super.key,
         required this.child,
@@ -2092,45 +2074,37 @@ class LeaderboardGlassCard
   @override
   Widget build(BuildContext context) {
     final isDark =
-        Theme.of(context).brightness ==
-            Brightness.dark;
+        Theme.of(context).brightness == Brightness.dark;
     return ClipRRect(
-        borderRadius:
-        BorderRadius.circular(borderRadius),
-        child: BackdropFilter(
-            filter: ImageFilter.blur(
-                sigmaX: 14, sigmaY: 14),
-            child: Container(
-                padding: padding,
-                decoration: BoxDecoration(
-                    color: (isDark
-                        ? const Color(
-                        0xFF151C2F)
-                        : Colors.white)
-                        .withOpacity(
-                        isDark ? 0.72 : 0.82),
-                    borderRadius:
-                    BorderRadius.circular(
-                        borderRadius),
-                    border: Border.all(
-                        color: isDark
-                            ? Colors.white
-                            .withOpacity(
-                            0.06)
-                            : Colors.black
-                            .withOpacity(
-                            0.06)),
-                    boxShadow: [
-                      BoxShadow(
-                          color: Colors.black
-                              .withOpacity(isDark
-                              ? 0.24
-                              : 0.06),
-                          blurRadius: 22,
-                          offset: const Offset(
-                              0, 10))
-                    ]),
-                child: child)));
+      borderRadius: BorderRadius.circular(borderRadius),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        child: Container(
+          padding: padding,
+          decoration: BoxDecoration(
+            color: (isDark
+                ? const Color(0xFF151C2F)
+                : Colors.white)
+                .withOpacity(isDark ? 0.72 : 0.82),
+            borderRadius: BorderRadius.circular(borderRadius),
+            border: Border.all(
+              color: isDark
+                  ? Colors.white.withOpacity(0.06)
+                  : Colors.black.withOpacity(0.06),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black
+                    .withOpacity(isDark ? 0.24 : 0.06),
+                blurRadius: 22,
+                offset: const Offset(0, 10),
+              )
+            ],
+          ),
+          child: child,
+        ),
+      ),
+    );
   }
 }
 
@@ -2138,8 +2112,7 @@ class ReportPayload {
   final String reasonId;
   final String? details;
   const ReportPayload(
-      {required this.reasonId,
-        required this.details});
+      {required this.reasonId, required this.details});
 }
 
 class ReportDialog extends StatefulWidget {
@@ -2151,14 +2124,11 @@ class ReportDialog extends StatefulWidget {
         required this.targetName});
 
   @override
-  State<ReportDialog> createState() =>
-      _ReportDialogState();
+  State<ReportDialog> createState() => _ReportDialogState();
 }
 
-class _ReportDialogState
-    extends State<ReportDialog> {
-  String _reasonId =
-      LeaderboardReportReasons.spam;
+class _ReportDialogState extends State<ReportDialog> {
+  String _reasonId = LeaderboardReportReasons.spam;
   final _detailsC = TextEditingController();
 
   @override
@@ -2170,108 +2140,94 @@ class _ReportDialogState
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      backgroundColor: widget.isDark
-          ? const Color(0xFF151C2F)
-          : Colors.white,
+      backgroundColor:
+      widget.isDark ? const Color(0xFF151C2F) : Colors.white,
       shape: RoundedRectangleBorder(
-          borderRadius:
-          BorderRadius.circular(24)),
+          borderRadius: BorderRadius.circular(24)),
       title: Text(
-          'Report ${widget.targetName}',
-          style: const TextStyle(
-              fontWeight: FontWeight.w900),
-          overflow: TextOverflow.ellipsis),
+        'Report ${widget.targetName}',
+        style: const TextStyle(fontWeight: FontWeight.w900),
+        overflow: TextOverflow.ellipsis,
+      ),
       content: SingleChildScrollView(
-          child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _rr(LeaderboardReportReasons.spam,
-                    'Spam'),
-                _rr(LeaderboardReportReasons.abusive,
-                    'Abusive'),
-                _rr(
-                    LeaderboardReportReasons
-                        .impersonation,
-                    'Impersonation'),
-                _rr(
-                    LeaderboardReportReasons
-                        .inappropriate,
-                    'Inappropriate'),
-                _rr(LeaderboardReportReasons.other,
-                    'Other'),
-                const SizedBox(height: 10),
-                TextField(
-                    controller: _detailsC,
-                    maxLines: 3,
-                    maxLength: 280,
-                    decoration:
-                    const InputDecoration(
-                        labelText:
-                        'Details (optional)',
-                        counterText: '')),
-              ])),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _rr(LeaderboardReportReasons.spam, 'Spam'),
+            _rr(LeaderboardReportReasons.abusive, 'Abusive'),
+            _rr(LeaderboardReportReasons.impersonation,
+                'Impersonation'),
+            _rr(LeaderboardReportReasons.inappropriate,
+                'Inappropriate'),
+            _rr(LeaderboardReportReasons.other, 'Other'),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _detailsC,
+              maxLines: 3,
+              maxLength: 280,
+              decoration: const InputDecoration(
+                labelText: 'Details (optional)',
+                counterText: '',
+              ),
+            ),
+          ],
+        ),
+      ),
       actions: [
         TextButton(
-            onPressed: () =>
-                Navigator.pop(context),
-            child: const Text('Cancel',
-                style: TextStyle(
-                    fontWeight:
-                    FontWeight.w800))),
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel',
+              style: TextStyle(fontWeight: FontWeight.w800)),
+        ),
         ElevatedButton(
-            onPressed: () => Navigator.pop(
-                context,
-                ReportPayload(
-                    reasonId: _reasonId,
-                    details: _detailsC.text
-                        .trim()
-                        .isEmpty
-                        ? null
-                        : _detailsC.text
-                        .trim())),
-            style: ElevatedButton.styleFrom(
-                backgroundColor:
-                AppConfig.primaryColor,
-                foregroundColor: Colors.white),
-            child: const Text('Send Report',
-                style: TextStyle(
-                    fontWeight:
-                    FontWeight.w900))),
+          onPressed: () => Navigator.pop(
+            context,
+            ReportPayload(
+              reasonId: _reasonId,
+              details: _detailsC.text.trim().isEmpty
+                  ? null
+                  : _detailsC.text.trim(),
+            ),
+          ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppConfig.primaryColor,
+            foregroundColor: Colors.white,
+          ),
+          child: const Text('Send Report',
+              style: TextStyle(fontWeight: FontWeight.w900)),
+        ),
       ],
     );
   }
 
-  Widget _rr(String value, String label) =>
-      RadioListTile<String>(
-          value: value,
-          groupValue: _reasonId,
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          activeColor: AppConfig.primaryColor,
-          title: Text(label,
-              style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  color: widget.isDark
-                      ? Colors.white
-                      : Colors.black87)),
-          onChanged: (v) {
-            if (v != null) {
-              setState(() => _reasonId = v);
-            }
-          });
+  Widget _rr(String value, String label) => RadioListTile<String>(
+    value: value,
+    groupValue: _reasonId,
+    dense: true,
+    contentPadding: EdgeInsets.zero,
+    activeColor: AppConfig.primaryColor,
+    title: Text(
+      label,
+      style: TextStyle(
+        fontWeight: FontWeight.w700,
+        color: widget.isDark ? Colors.white : Colors.black87,
+      ),
+    ),
+    onChanged: (v) {
+      if (v != null) setState(() => _reasonId = v);
+    },
+  );
 }
 
 class PlayerSearchSheet extends StatefulWidget {
   final User me;
-  const PlayerSearchSheet(
-      {super.key, required this.me});
+  const PlayerSearchSheet({super.key, required this.me});
   @override
   State<PlayerSearchSheet> createState() =>
       _PlayerSearchSheetState();
 }
 
-class _PlayerSearchSheetState
-    extends State<PlayerSearchSheet> {
+class _PlayerSearchSheetState extends State<PlayerSearchSheet> {
   final _searchC = TextEditingController();
   bool _isLoading = false;
   List<Map<String, dynamic>> _results = [];
@@ -2296,245 +2252,264 @@ class _PlayerSearchSheetState
           .collection('leaderboard_v1_users')
           .doc(query)
           .get();
-      if (doc.exists &&
-          doc.id != widget.me.uid) {
-        _results.add({
-          'id': doc.id,
-          ...doc.data() as Map<String, dynamic>
-        });
+      if (doc.exists && doc.id != widget.me.uid) {
+        _results.add(
+            {'id': doc.id, ...doc.data() as Map<String, dynamic>});
       }
-      final snap = await FirebaseFirestore
-          .instance
+      final snap = await FirebaseFirestore.instance
           .collection('leaderboard_v1_users')
+          .where('displayName', isGreaterThanOrEqualTo: query)
           .where('displayName',
-          isGreaterThanOrEqualTo: query)
-          .where('displayName',
-          isLessThanOrEqualTo:
-          '$query\uf8ff')
+          isLessThanOrEqualTo: '$query\uf8ff')
           .limit(10)
           .get();
       for (var d in snap.docs) {
         if (d.id != widget.me.uid &&
-            !_results
-                .any((r) => r['id'] == d.id)) {
-          _results
-              .add({'id': d.id, ...d.data()});
+            !_results.any((r) => r['id'] == d.id)) {
+          _results.add({'id': d.id, ...d.data()});
         }
       }
     } catch (_) {}
-    if (mounted) {
-      setState(() => _isLoading = false);
-    }
+    if (mounted) setState(() => _isLoading = false);
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark =
-        Theme.of(context).brightness ==
-            Brightness.dark;
+        Theme.of(context).brightness == Brightness.dark;
     return Padding(
       padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context)
-              .viewInsets
-              .bottom),
+          bottom: MediaQuery.of(context).viewInsets.bottom),
       child: ClipRRect(
         borderRadius:
-        const BorderRadius.vertical(
-            top: Radius.circular(32)),
+        const BorderRadius.vertical(top: Radius.circular(32)),
         child: BackdropFilter(
-          filter: ImageFilter.blur(
-              sigmaX: 25, sigmaY: 25),
+          filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
           child: Container(
-            height: MediaQuery.of(context)
-                .size
-                .height *
-                0.75,
-            padding:
-            const EdgeInsets.all(24),
+            height: MediaQuery.of(context).size.height * 0.75,
+            padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-                color: isDark
-                    ? const Color(0xFF151C2F)
-                    .withOpacity(0.95)
-                    : Colors.white
-                    .withOpacity(0.95)),
+              color: isDark
+                  ? const Color(0xFF151C2F).withOpacity(0.95)
+                  : Colors.white.withOpacity(0.95),
+            ),
             child: Column(
-              crossAxisAlignment:
-              CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Center(
-                    child: Container(
-                        width: 40,
-                        height: 4,
-                        decoration: BoxDecoration(
-                            color: Colors.grey
-                                .withOpacity(
-                                0.3),
-                            borderRadius:
-                            BorderRadius
-                                .circular(
-                                2)))),
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.withOpacity(0.3),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 24),
-                Text('Find Player',
-                    style: TextStyle(
-                        fontSize: 22,
-                        fontWeight:
-                        FontWeight.w900,
-                        color: isDark
-                            ? Colors.white
-                            : Colors
-                            .black87)),
+                Text(
+                  'Find Player',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                    color: isDark ? Colors.white : Colors.black87,
+                  ),
+                ),
                 const SizedBox(height: 20),
                 Row(children: [
                   Expanded(
-                      child: Container(
-                          padding:
-                          const EdgeInsets
-                              .symmetric(
-                              horizontal:
-                              16),
-                          decoration: BoxDecoration(
+                    child: Container(
+                      padding:
+                      const EdgeInsets.symmetric(horizontal: 16),
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? Colors.black26
+                            : Colors.black.withOpacity(0.04),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                            color: AppConfig.primaryColor
+                                .withOpacity(0.3)),
+                      ),
+                      child: TextField(
+                        controller: _searchC,
+                        style: TextStyle(
+                            color: isDark
+                                ? Colors.white
+                                : Colors.black87),
+                        decoration: InputDecoration(
+                          hintText: 'UID or Name...',
+                          hintStyle: TextStyle(
                               color: isDark
-                                  ? Colors
-                                  .black26
-                                  : Colors.black
-                                  .withOpacity(
-                                  0.04),
-                              borderRadius:
-                              BorderRadius
-                                  .circular(
-                                  16),
-                              border: Border.all(
-                                  color: AppConfig
-                                      .primaryColor
-                                      .withOpacity(
-                                      0.3))),
-                          child: TextField(
-                              controller:
-                              _searchC,
-                              style: TextStyle(
-                                  color: isDark
-                                      ? Colors
-                                      .white
-                                      : Colors
-                                      .black87),
-                              decoration:
-                              InputDecoration(
-                                  hintText:
-                                  'UID or Name...',
-                                  hintStyle: TextStyle(
-                                      color: isDark
-                                          ? Colors
-                                          .white38
-                                          : Colors
-                                          .black38),
-                                  border:
-                                  InputBorder
-                                      .none,
-                                  icon: const Icon(
-                                      Icons
-                                          .search_rounded,
-                                      color: AppConfig
-                                          .primaryColor)),
-                              onSubmitted: (_) =>
-                                  _performSearch()))),
+                                  ? Colors.white38
+                                  : Colors.black38),
+                          border: InputBorder.none,
+                          icon: const Icon(Icons.search_rounded,
+                              color: AppConfig.primaryColor),
+                        ),
+                        onSubmitted: (_) => _performSearch(),
+                      ),
+                    ),
+                  ),
                   const SizedBox(width: 12),
                   GestureDetector(
-                      onTap: _performSearch,
-                      child: Container(
-                          padding:
-                          const EdgeInsets
-                              .all(14),
-                          decoration: BoxDecoration(
-                              color: AppConfig
-                                  .primaryColor,
-                              borderRadius:
-                              BorderRadius
-                                  .circular(
-                                  16)),
-                          child: _isLoading
-                              ? const SizedBox(
-                              width: 24,
-                              height: 24,
-                              child: CircularProgressIndicator(
-                                  color: Colors
-                                      .white,
-                                  strokeWidth:
-                                  2))
-                              : const Icon(
-                              Icons
-                                  .arrow_forward_rounded,
-                              color: Colors
-                                  .white))),
+                    onTap: _performSearch,
+                    child: Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: AppConfig.primaryColor,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: _isLoading
+                          ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                            color: Colors.white, strokeWidth: 2),
+                      )
+                          : const Icon(Icons.arrow_forward_rounded,
+                          color: Colors.white),
+                    ),
+                  ),
                 ]),
                 const SizedBox(height: 24),
                 Expanded(
-                    child: _isLoading
-                        ? const Center(
-                        child: CircularProgressIndicator(
-                            color: AppConfig
-                                .primaryColor))
-                        : !_hasSearched
-                        ? Center(
-                        child: Icon(
-                            Icons
-                                .person_search_rounded,
-                            size: 80,
-                            color: isDark
-                                ? Colors
-                                .white10
-                                : Colors
-                                .black12))
-                        : _results.isEmpty
-                        ? Center(
-                        child: Text(
-                            'No player found.',
-                            style: TextStyle(
-                                fontWeight: FontWeight
-                                    .w700,
-                                color: isDark
-                                    ? Colors.white54
-                                    : Colors.black45)))
-                        : ListView.builder(
-                        itemCount: _results.length,
-                        itemBuilder: (_, i) {
-                          final r =
-                          _results[i];
-                          final uid =
-                          r['id']
-                          as String;
-                          final name =
-                              (r['displayName']
-                              as String?) ??
-                                  'Player';
-                          final avatar =
-                              (r['avatarEmoji']
-                              as String?) ??
-                                  '🙂';
-                          return Container(
-                              margin: const EdgeInsets.only(bottom: 12),
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(color: isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.03), borderRadius: BorderRadius.circular(20), border: Border.all(color: isDark ? Colors.white10 : Colors.black12)),
-                              child: Row(children: [
-                                CircleAvatar(radius: 24, backgroundColor: AppConfig.primaryColor.withOpacity(0.2), child: Text(avatar, style: const TextStyle(fontSize: 24))),
-                                const SizedBox(width: 14),
-                                Expanded(
-                                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                      Text(name, style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: isDark ? Colors.white : Colors.black87)),
-                                      GestureDetector(
-                                          onTap: () {
-                                            Clipboard.setData(ClipboardData(text: uid));
-                                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('UID copied!'), behavior: SnackBarBehavior.floating, duration: Duration(seconds: 1)));
-                                          },
-                                          child: Text('UID: ${uid.length > 10 ? uid.substring(0, 10) : uid}...', style: TextStyle(fontSize: 11, color: isDark ? Colors.white54 : Colors.black54))),
-                                    ])),
-                                IconButton(
-                                    icon: const Icon(Icons.chat_bubble_rounded, color: AppConfig.primaryColor),
-                                    onPressed: () {
-                                      Navigator.pop(context);
-                                      Navigator.push(context, MaterialPageRoute(builder: (_) => ChatScreen(peerUid: uid, peerName: name, peerAvatar: avatar)));
-                                    }),
-                              ]));
-                        })),
+                  child: _isLoading
+                      ? const Center(
+                      child: CircularProgressIndicator(
+                          color: AppConfig.primaryColor))
+                      : !_hasSearched
+                      ? Center(
+                    child: Icon(
+                      Icons.person_search_rounded,
+                      size: 80,
+                      color: isDark
+                          ? Colors.white10
+                          : Colors.black12,
+                    ),
+                  )
+                      : _results.isEmpty
+                      ? Center(
+                    child: Text(
+                      'No player found.',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: isDark
+                            ? Colors.white54
+                            : Colors.black45,
+                      ),
+                    ),
+                  )
+                      : ListView.builder(
+                    itemCount: _results.length,
+                    itemBuilder: (_, i) {
+                      final r = _results[i];
+                      final uid = r['id'] as String;
+                      final name =
+                          (r['displayName'] as String?) ??
+                              'Player';
+                      final avatar =
+                          (r['avatarEmoji'] as String?) ??
+                              '🙂';
+                      return Container(
+                        margin: const EdgeInsets.only(
+                            bottom: 12),
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? Colors.white
+                              .withOpacity(0.05)
+                              : Colors.black
+                              .withOpacity(0.03),
+                          borderRadius:
+                          BorderRadius.circular(20),
+                          border: Border.all(
+                              color: isDark
+                                  ? Colors.white10
+                                  : Colors.black12),
+                        ),
+                        child: Row(children: [
+                          CircleAvatar(
+                            radius: 24,
+                            backgroundColor:
+                            AppConfig.primaryColor
+                                .withOpacity(0.2),
+                            child: Text(avatar,
+                                style: const TextStyle(
+                                    fontSize: 24)),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment:
+                              CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  name,
+                                  style: TextStyle(
+                                    fontWeight:
+                                    FontWeight.w900,
+                                    fontSize: 15,
+                                    color: isDark
+                                        ? Colors.white
+                                        : Colors.black87,
+                                  ),
+                                ),
+                                GestureDetector(
+                                  onTap: () {
+                                    Clipboard.setData(
+                                        ClipboardData(
+                                            text: uid));
+                                    ScaffoldMessenger.of(
+                                        context)
+                                        .showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                            'UID copied!'),
+                                        behavior:
+                                        SnackBarBehavior
+                                            .floating,
+                                        duration: Duration(
+                                            seconds: 1),
+                                      ),
+                                    );
+                                  },
+                                  child: Text(
+                                    'UID: ${uid.length > 10 ? uid.substring(0, 10) : uid}...',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: isDark
+                                          ? Colors.white54
+                                          : Colors.black54,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(
+                                Icons.chat_bubble_rounded,
+                                color:
+                                AppConfig.primaryColor),
+                            onPressed: () {
+                              Navigator.pop(context);
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => ChatScreen(
+                                    peerUid: uid,
+                                    peerName: name,
+                                    peerAvatar: avatar,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ]),
+                      );
+                    },
+                  ),
+                ),
               ],
             ),
           ),
