@@ -1,7 +1,7 @@
 // lib/services/alarm_service.dart
 
+import 'dart:async';
 import 'package:flutter/foundation.dart';
-
 import 'sound_service.dart';
 import 'tts_service.dart';
 import '../models/habit_model.dart';
@@ -24,15 +24,20 @@ class AlarmService {
     debugPrint('🔔 AlarmService: starting alarm');
 
     try {
-      // ✅ Sound শুরু করো — await করো না
-      // unawaited কারণ loop চলতে থাকবে
-      SoundService.startAlarmLoop().catchError((e) {
-        debugPrint('❌ Sound loop error: $e');
-        return null;
-      });
+      // ✅ STEP 1: TTS বন্ধ করো — sound block প্রতিরোধ
+      try {
+        await TtsService.stop();
+      } catch (_) {}
 
-      // ✅ TTS আলাদা Future এ চালাও
-      // Sound কে block করবে না
+      // ✅ STEP 2: Audio system settle হতে wait
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      // ✅ STEP 3: Sound শুরু করো এবং wait করো
+      await SoundService.startAlarmLoop();
+
+      debugPrint('✅ Alarm sound started');
+
+      // ✅ STEP 4: TTS sound এর পরে চালাও (delay দিয়ে)
       if (habit != null) {
         _speakWithDelay(habit);
       }
@@ -43,13 +48,12 @@ class AlarmService {
   }
 
   // ─────────────────────────────────────────────
-  // TTS — আলাদাভাবে চালাও
-  // Sound interrupt করবে না
+  // TTS — Sound এর পরে চালাও
   // ─────────────────────────────────────────────
 
   static void _speakWithDelay(Habit habit) {
-    Future.delayed(const Duration(milliseconds: 1500), () async {
-      // ✅ Alarm বন্ধ হয়ে গেলে TTS বলবে না
+    // ✅ 4 second delay — user প্রথমে sound শুনবে
+    Future.delayed(const Duration(seconds: 4), () async {
       if (!_isRinging) {
         debugPrint('🔇 Alarm stopped before TTS — skipping');
         return;
@@ -77,13 +81,9 @@ class AlarmService {
     }
 
     debugPrint('🔕 AlarmService: stopping alarm');
-
-    // ✅ আগে flag reset করো
-    // TTS delay check এর জন্য
     _isRinging = false;
 
     try {
-      // ✅ Sound এবং TTS একসাথে বন্ধ করো
       await Future.wait([
         SoundService.stopAlarmLoop().catchError((e) {
           debugPrint('❌ Sound stop error: $e');
@@ -102,9 +102,7 @@ class AlarmService {
   }
 
   // ─────────────────────────────────────────────
-  // ENSURE STOPPED
-  // dispose() থেকে call হয়
-  // Force stop — _isRinging check নেই
+  // ENSURE STOPPED — Force stop
   // ─────────────────────────────────────────────
 
   static Future<void> ensureStopped() async {

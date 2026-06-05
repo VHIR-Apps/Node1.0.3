@@ -26,7 +26,6 @@ class AlarmScreen extends StatefulWidget {
 
 class _AlarmScreenState extends State<AlarmScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
-  // Animations
   late final AnimationController _pulseController;
   late final AnimationController _ringController;
   late final AnimationController _rotateController;
@@ -40,14 +39,9 @@ class _AlarmScreenState extends State<AlarmScreen>
   bool _alarmStarted = false;
   bool _isDismissing = false;
 
-  // 🔒 SECURITY: Device lock state monitor
+  // 🔒 Security watchdogs
   Timer? _securityWatchdog;
   Timer? _soundWatchdog;
-  bool _wasLockedAtStart = false;
-
-  // 🔒 SECURITY: Native channel for lock state check
-  static const MethodChannel _lockChannel =
-  MethodChannel('com.habit.node/lock_screen');
 
   Color get _habitColor => Color(widget.habit.colorValue);
 
@@ -69,25 +63,16 @@ class _AlarmScreenState extends State<AlarmScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
-    // 🔒 SECURITY: Check initial lock state
-    _checkInitialLockState();
-
-    // Lock screen bypass enable
+    // 🔒 Lock screen bypass আগে enable করো
     unawaited(LockScreenService.enableForAlarm());
 
-    // 🔒 SECURITY: Full immersive — hide all system UI
+    // 🔒 Full immersive
     SystemChrome.setEnabledSystemUIMode(
       SystemUiMode.immersiveSticky,
       overlays: [],
     );
 
-    // 🔒 SECURITY: Disable system back gesture
-    SystemChannels.platform.invokeMethod('SystemNavigator.routeUpdated', {
-      'routeName': '/alarm',
-      'state': null,
-    });
-
-    // Initialize animations
+    // Animations
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
@@ -130,47 +115,26 @@ class _AlarmScreenState extends State<AlarmScreen>
     // Start alarm
     unawaited(_startAlarmSafely());
 
-    // 🔒 SECURITY: Start watchdogs
+    // 🔒 Start watchdogs
     _startSecurityWatchdog();
     _startSoundWatchdog();
   }
 
-  // 🔒 Check if device was locked when alarm started
-  Future<void> _checkInitialLockState() async {
-    try {
-      final isLocked = await _lockChannel.invokeMethod<bool>('isDeviceLocked');
-      _wasLockedAtStart = isLocked ?? false;
-      debugPrint('🔒 Device was locked at alarm start: $_wasLockedAtStart');
-    } catch (e) {
-      debugPrint('❌ Lock state check failed: $e');
-      _wasLockedAtStart = false;
-    }
-  }
-
-  // 🔒 SECURITY WATCHDOG
-  // প্রতি 500ms চেক করে — যদি কোনোভাবে এই screen থেকে বের হয়,
-  // সাথে সাথে আবার alarm screen এ ফিরিয়ে আনে
+  // 🔒 Security watchdog — every 500ms
   void _startSecurityWatchdog() {
     _securityWatchdog?.cancel();
     _securityWatchdog = Timer.periodic(
       const Duration(milliseconds: 500),
           (timer) async {
-        if (_isDismissing) {
+        if (_isDismissing || !mounted) {
           timer.cancel();
           return;
         }
 
-        if (!mounted) {
-          timer.cancel();
-          return;
-        }
-
-        // 🔒 Force ensure lock screen bypass is still active
         try {
           await LockScreenService.enableForAlarm();
         } catch (_) {}
 
-        // 🔒 Force ensure system UI hidden
         try {
           SystemChrome.setEnabledSystemUIMode(
             SystemUiMode.immersiveSticky,
@@ -181,24 +145,17 @@ class _AlarmScreenState extends State<AlarmScreen>
     );
   }
 
-  // 🔒 SOUND WATCHDOG
-  // যদি sound কোনোভাবে বন্ধ হয়, আবার চালু করে
+  // 🔊 Sound watchdog — every 3s
   void _startSoundWatchdog() {
     _soundWatchdog?.cancel();
     _soundWatchdog = Timer.periodic(
       const Duration(seconds: 3),
           (timer) async {
-        if (_isDismissing) {
+        if (_isDismissing || !mounted) {
           timer.cancel();
           return;
         }
 
-        if (!mounted) {
-          timer.cancel();
-          return;
-        }
-
-        // 🔒 যদি sound বন্ধ হয়ে যায়, আবার চালু করো
         if (!AlarmService.isRinging) {
           debugPrint('🔄 Sound watchdog: restarting alarm');
           try {
@@ -229,7 +186,7 @@ class _AlarmScreenState extends State<AlarmScreen>
     }
   }
 
-  // 🔒 SECURITY: App lifecycle monitoring
+  // 🔒 Lifecycle monitoring
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
@@ -238,23 +195,17 @@ class _AlarmScreenState extends State<AlarmScreen>
 
     debugPrint('🔒 Alarm screen lifecycle: $state');
 
-    // 🔒 যদি app pause/inactive হয়, sound চালু রাখো
-    // এবং re-enable lock screen bypass
     if (state == AppLifecycleState.resumed) {
-      // Resume হলে নিশ্চিত করো sound চলছে
       _ensureAlarmStillRinging();
 
-      // আবার immersive mode
       SystemChrome.setEnabledSystemUIMode(
         SystemUiMode.immersiveSticky,
         overlays: [],
       );
 
-      // Lock screen bypass আবার enable
       unawaited(LockScreenService.enableForAlarm());
     } else if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
-      // Pause হলেও sound চালু থাকবে (alarm service background এ চলবে)
       debugPrint('⚠️ App paused but alarm sound continues');
     }
   }
@@ -283,9 +234,7 @@ class _AlarmScreenState extends State<AlarmScreen>
     unawaited(AlarmService.ensureStopped());
     unawaited(LockScreenService.disableAfterAlarm());
 
-    SystemChrome.setEnabledSystemUIMode(
-      SystemUiMode.edgeToEdge,
-    );
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
     super.dispose();
   }
@@ -298,7 +247,6 @@ class _AlarmScreenState extends State<AlarmScreen>
     if (_isBusy) return;
     if (mounted) setState(() => _isBusy = true);
 
-    // 🔒 SECURITY: Mark as dismissing — watchdogs will stop
     _isDismissing = true;
     _securityWatchdog?.cancel();
     _soundWatchdog?.cancel();
@@ -340,19 +288,10 @@ class _AlarmScreenState extends State<AlarmScreen>
     );
   }
 
+  // ✅ SIMPLIFIED close — শুধু pop
   Future<void> _closeScreen() async {
     if (!mounted) return;
 
-    // 🔒 SECURITY: যদি device locked অবস্থায় alarm এসেছিল,
-    // তাহলে app পুরোপুরি বন্ধ করো — dashboard এ ফেরা যাবে না
-    if (_wasLockedAtStart) {
-      debugPrint('🔒 Device was locked — closing app completely');
-      await Future.delayed(const Duration(milliseconds: 200));
-      await SystemNavigator.pop();
-      return;
-    }
-
-    // App ওপেন অবস্থায় alarm এসেছিল — শুধু alarm screen pop করো
     final navigator = Navigator.of(context);
     if (navigator.canPop()) {
       navigator.pop();
@@ -371,14 +310,12 @@ class _AlarmScreenState extends State<AlarmScreen>
     final size = MediaQuery.of(context).size;
     final isSmallScreen = size.height < 700;
 
-    // 🔒 SECURITY: PopScope (Flutter 3.12+) সব back gesture block করে
     return PopScope(
       canPop: false,
       onPopInvoked: (didPop) {
         if (didPop) return;
-        // 🔒 Back press করলে কিছুই হবে না
         HapticFeedback.heavyImpact();
-        debugPrint('🔒 Back press blocked — must use Stop/Snooze');
+        debugPrint('🔒 Back press blocked');
       },
       child: AnnotatedRegion<SystemUiOverlayStyle>(
         value: SystemUiOverlayStyle.light.copyWith(
@@ -389,23 +326,15 @@ class _AlarmScreenState extends State<AlarmScreen>
         ),
         child: Scaffold(
           backgroundColor: const Color(0xFF030712),
-          // 🔒 SECURITY: resizeToAvoidBottomInset false — keyboard আসতে পারবে না
           resizeToAvoidBottomInset: false,
           body: Stack(
             children: [
-              // ANIMATED BACKGROUND
               RepaintBoundary(
                 child: _buildAnimatedBackground(primary),
               ),
-
-              // Dark overlay
               Positioned.fill(
-                child: Container(
-                  color: Colors.black.withOpacity(0.65),
-                ),
+                child: Container(color: Colors.black.withOpacity(0.65)),
               ),
-
-              // MAIN CONTENT
               SafeArea(
                 child: FadeTransition(
                   opacity: _entryFade,
@@ -443,10 +372,6 @@ class _AlarmScreenState extends State<AlarmScreen>
       ),
     );
   }
-
-  // ─────────────────────────────────────────────
-  // ANIMATED BACKGROUND
-  // ─────────────────────────────────────────────
 
   Widget _buildAnimatedBackground(Color primary) {
     return AnimatedBuilder(
@@ -510,10 +435,6 @@ class _AlarmScreenState extends State<AlarmScreen>
     );
   }
 
-  // ─────────────────────────────────────────────
-  // TOP STATUS
-  // ─────────────────────────────────────────────
-
   Widget _buildTopStatus(Color primary) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -529,16 +450,11 @@ class _AlarmScreenState extends State<AlarmScreen>
                 ).createShader(bounds);
               },
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 18,
-                  vertical: 10,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.06),
                   borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
-                    color: Colors.white.withOpacity(0.15),
-                  ),
+                  border: Border.all(color: Colors.white.withOpacity(0.15)),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -562,11 +478,7 @@ class _AlarmScreenState extends State<AlarmScreen>
                       ),
                     ),
                     const SizedBox(width: 10),
-                    const Icon(
-                      Icons.lock_rounded,
-                      color: Colors.white,
-                      size: 15,
-                    ),
+                    const Icon(Icons.lock_rounded, color: Colors.white, size: 15),
                   ],
                 ),
               ),
@@ -576,10 +488,6 @@ class _AlarmScreenState extends State<AlarmScreen>
       ],
     );
   }
-
-  // ─────────────────────────────────────────────
-  // PULSING ORB
-  // ─────────────────────────────────────────────
 
   Widget _buildPulsingOrb(Color primary, Size size) {
     final orbSize = size.width > 480 ? 240.0 : 200.0;
@@ -621,10 +529,7 @@ class _AlarmScreenState extends State<AlarmScreen>
           ),
           ScaleTransition(
             scale: Tween<double>(begin: 0.9, end: 1.05).animate(
-              CurvedAnimation(
-                parent: _pulseController,
-                curve: Curves.easeInOut,
-              ),
+              CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
             ),
             child: Container(
               width: orbSize + 40,
@@ -656,10 +561,7 @@ class _AlarmScreenState extends State<AlarmScreen>
               gradient: const LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [
-                  Color(0xFF1E293B),
-                  Color(0xFF0F172A),
-                ],
+                colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
               ),
               border: Border.all(
                 color: Colors.white.withOpacity(0.15),
@@ -677,8 +579,7 @@ class _AlarmScreenState extends State<AlarmScreen>
               child: AnimatedBuilder(
                 animation: _pulseController,
                 builder: (context, _) {
-                  final scale = 1.0 +
-                      (math.sin(_pulseController.value * math.pi) * 0.08);
+                  final scale = 1.0 + (math.sin(_pulseController.value * math.pi) * 0.08);
                   return Transform.scale(
                     scale: scale,
                     child: Text(
@@ -702,10 +603,6 @@ class _AlarmScreenState extends State<AlarmScreen>
       ),
     );
   }
-
-  // ─────────────────────────────────────────────
-  // INFO CARD
-  // ─────────────────────────────────────────────
 
   Widget _buildInfoCard(Color primary) {
     return ClipRRect(
@@ -813,10 +710,6 @@ class _AlarmScreenState extends State<AlarmScreen>
     );
   }
 
-  // ─────────────────────────────────────────────
-  // ACTION BUTTONS
-  // ─────────────────────────────────────────────
-
   Widget _buildActionButtons(Color primary) {
     return Column(
       children: [
@@ -844,10 +737,7 @@ class _AlarmScreenState extends State<AlarmScreen>
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: [
-                      primary,
-                      primary.withOpacity(0.8),
-                    ],
+                    colors: [primary, primary.withOpacity(0.8)],
                   ),
                 ),
                 child: Center(
@@ -857,19 +747,13 @@ class _AlarmScreenState extends State<AlarmScreen>
                     height: 24,
                     child: CircularProgressIndicator(
                       strokeWidth: 2.5,
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        Colors.white,
-                      ),
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                     ),
                   )
                       : const Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(
-                        Icons.check_circle_rounded,
-                        color: Colors.white,
-                        size: 22,
-                      ),
+                      Icon(Icons.check_circle_rounded, color: Colors.white, size: 22),
                       SizedBox(width: 10),
                       Text(
                         'STOP ALARM',
@@ -934,7 +818,7 @@ class _AlarmScreenState extends State<AlarmScreen>
 }
 
 // ─────────────────────────────────────────────
-// LIVE CLOCK WIDGET
+// LIVE CLOCK
 // ─────────────────────────────────────────────
 class _LiveClockWidget extends StatefulWidget {
   final Color habitColor;
@@ -973,10 +857,7 @@ class _LiveClockWidgetState extends State<_LiveClockWidget> {
   }
 
   String _formatDate(DateTime time) {
-    const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-    ];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     return '${days[time.weekday - 1]}, ${time.day} ${months[time.month - 1]}';
   }
@@ -1019,7 +900,6 @@ class _LiveClockWidgetState extends State<_LiveClockWidget> {
 // ─────────────────────────────────────────────
 // INFO CHIP
 // ─────────────────────────────────────────────
-
 class _InfoChip extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -1034,16 +914,11 @@ class _InfoChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 14,
-        vertical: 9,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
       decoration: BoxDecoration(
         color: color.withOpacity(0.15),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(
-          color: color.withOpacity(0.3),
-        ),
+        border: Border.all(color: color.withOpacity(0.3)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
