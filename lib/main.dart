@@ -8,7 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:flutter_native_splash/flutter_native_splash.dart';
+import 'package:flutter_native_splash/flutter_native_splash.dart'; // ✅ FIX: স্প্ল্যাশ স্ক্রিন রিমুভ করার জন্য ইমপোর্ট করা হলো
 import 'package:hive_flutter/hive_flutter.dart';
 
 import 'config/app_config.dart';
@@ -22,6 +22,7 @@ import 'models/study_routine_model.dart';
 import 'models/study_session_model.dart';
 import 'models/study_target_model.dart';
 import 'screens/alarm_screen.dart';
+// ✅ FIX: InboxScreen এর ইম্পোর্ট রিমুভ করা হয়েছে কারণ ইনবক্সে অটোমেটিক আর যাবে না
 import 'screens/splash_screen.dart';
 import 'screens/study_mode_screen.dart';
 import 'services/advanced_pomodoro_service.dart';
@@ -108,8 +109,7 @@ bool _isSystemPayload(String payload) {
 void main() async {
   runZonedGuarded(() async {
     WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
-    FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
-
+    FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding); // ✅ FIX: স্প্ল্যাশ স্ক্রিন প্রিজার্ভ করা হলো
     _setupErrorHandlers();
 
     try {
@@ -159,10 +159,7 @@ void main() async {
       ),
     );
 
-    // 🚀 FIX: NULL-SAFETY FOR ALL NOTIFICATION CALLBACKS
-    NotificationService.onAlarmNotificationTapped = (payload) {
-      if (payload != null) _handleAlarmNavigation(payload);
-    };
+    NotificationService.onAlarmNotificationTapped = _handleAlarmNavigation;
     NotificationService.onAlarmActionTapped = (actionId, habitId) {
       if (actionId != null && habitId != null) {
         _handleAlarmActionTap(actionId: actionId, habitId: habitId);
@@ -195,7 +192,7 @@ void main() async {
     }
 
     ChatNotificationService.instance.onNotificationTap = (peerUid) {
-      // User stays on Dashboard. Inbox auto-open disabled.
+      // Intentionally left empty — User wants to stay on Dashboard
     };
 
     AuthService.instance.userNotifier.addListener(() {
@@ -221,19 +218,15 @@ void main() async {
     try {
       final details = await FlutterLocalNotificationsPlugin().getNotificationAppLaunchDetails();
       if (details != null && details.didNotificationLaunchApp) {
-        final response = details.notificationResponse;
-        final String? payload = response?.payload;
-        final String? actionId = response?.actionId;
+        final payload = details.notificationResponse?.payload;
+        final actionId = details.notificationResponse?.actionId;
 
         if (payload != null) {
           if (_isAlarmPayload(payload)) {
             final habitId = payload.replaceFirst('alarm:', '');
             if (actionId == 'dismiss' || actionId == 'snooze') {
               _hasHandledColdStart = true;
-
-              // 🚀 FIX: Timer এর ভেতরে String? যেন না যায়, তাই আগে থেকেই String করে নিলাম
-              final String safeActionId = actionId!;
-
+              final String safeActionId = actionId ?? ''; // ✅ FIX: Null safety error fixed
               Future.delayed(const Duration(milliseconds: 2000), () {
                 _handleAlarmActionTap(actionId: safeActionId, habitId: habitId);
               });
@@ -243,7 +236,7 @@ void main() async {
                 await LockScreenService.enableForAlarm();
                 initialScreen = AlarmScreen(habit: habit);
                 _hasHandledColdStart = true;
-                FlutterNativeSplash.remove();
+                FlutterNativeSplash.remove(); // ✅ FIX: স্প্ল্যাশ স্ক্রিন বাইপাস
               }
             }
           }
@@ -251,10 +244,11 @@ void main() async {
           if (!_hasHandledColdStart && _isPomodoroPayload(payload)) {
             initialScreen = const StudyModeScreen();
             _hasHandledColdStart = true;
-            FlutterNativeSplash.remove();
+            FlutterNativeSplash.remove(); // ✅ FIX: স্প্ল্যাশ স্ক্রিন বাইপাস
           }
 
           if (!_hasHandledColdStart && _isChatPayload(payload)) {
+            // initialScreen stays default (Dashboard)
             _hasHandledColdStart = true;
           }
 
@@ -354,9 +348,8 @@ void _handleGeneralNotificationTap(String payload) {
     return;
   }
 
-  // ✅ Chat notification clicked — do NOT redirect to inbox
   if (_isChatPayload(payload)) {
-    return;
+    return; // ✅ FIX: চ্যাট নোটিফিকেশনে চাপ দিলে ড্যাশবোর্ডেই বসে থাকবে
   }
 
   if (payload.startsWith('evening_nudge:')) {
@@ -517,7 +510,7 @@ void _checkInitialAlarmLaunchDetails() async {
     if (_isAlarmPayload(payload)) {
       final habitId = payload.replaceFirst('alarm:', '');
       if (actionId == 'dismiss' || actionId == 'snooze') {
-        final String safeActionId = actionId!; // 🚀 FIX FOR NULL SAFETY
+        final String safeActionId = actionId ?? ''; // ✅ FIX: Null safety
         await _handleAlarmActionTap(actionId: safeActionId, habitId: habitId);
         return;
       }
@@ -534,7 +527,7 @@ void _checkInitialAlarmLaunchDetails() async {
     if (_isChatPayload(payload) || payload.startsWith('evening_nudge:')) return;
 
     if (actionId != null) {
-      final String safeActionId = actionId!; // 🚀 FIX FOR NULL SAFETY
+      final String safeActionId = actionId;
       await Future.delayed(const Duration(milliseconds: 1500));
       await _handleQuickActionTap(safeActionId, payload);
       return;
@@ -583,6 +576,7 @@ void _openAlarmScreen(Habit habit) {
 
   NotificationService.cancelAlarmNotification(habit.id).catchError((_) {});
   _isAlarmScreenOpen = true;
+  FlutterNativeSplash.remove(); // ✅ FIX: স্প্ল্যাশ স্ক্রিন রিমুভ করা হলো
 
   nav.push<void>(PageRouteBuilder(
     opaque: true,

@@ -2,6 +2,8 @@ package com.habit.node
 
 import android.app.KeyguardManager
 import android.content.Context
+import android.content.Intent
+import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
@@ -17,6 +19,8 @@ class MainActivity : FlutterActivity() {
     private var pendingBypassEnable = false
     private var wakeLock: PowerManager.WakeLock? = null
 
+    private var pendingAlarmPayload: String? = null
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
@@ -25,68 +29,60 @@ class MainActivity : FlutterActivity() {
             CHANNEL
         ).setMethodCallHandler { call, result ->
             when (call.method) {
-
                 "enableLockScreenBypass" -> {
-                    runOnUiThread {
-                        applyLockScreenBypass(enable = true)
-                    }
+                    runOnUiThread { applyLockScreenBypass(enable = true) }
                     result.success(true)
                 }
-
                 "disableLockScreenBypass" -> {
-                    runOnUiThread {
-                        applyLockScreenBypass(enable = false)
-                        pendingBypassEnable = false
-                    }
+                    runOnUiThread { applyLockScreenBypass(enable = false) }
                     result.success(true)
                 }
-
                 "isDeviceLocked" -> {
-                    val km = getSystemService(
-                        Context.KEYGUARD_SERVICE
-                    ) as KeyguardManager
-                    val locked = km.isKeyguardLocked
-                    result.success(locked)
+                    val km = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+                    result.success(km.isKeyguardLocked)
                 }
-
+                "getAlarmPayload" -> {
+                    val payload = pendingAlarmPayload
+                    pendingAlarmPayload = null
+                    result.success(payload)
+                }
                 else -> result.notImplemented()
             }
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-
-        val launchedByAlarm = isLaunchedByAlarmNotification()
-
+        // 🚀 MASTER FIX: অ্যালার্মের জন্য চালু হলে নেটিভ স্প্ল্যাশ স্ক্রিন সাথে সাথে গায়েব করে কালো করে দেবে!
+        val launchedByAlarm = isLaunchedByAlarmNotification(intent)
         if (launchedByAlarm) {
-            applyLockScreenBypass(enable = true)
-            pendingBypassEnable = true
-        } else {
-            applyLockScreenBypass(enable = false)
-            pendingBypassEnable = false
+            window.decorView.setBackgroundColor(Color.BLACK)
+            window.setBackgroundDrawableResource(android.R.color.black)
         }
+
+        super.onCreate(savedInstanceState)
+        checkIntentForAlarm(intent)
     }
 
-    override fun onNewIntent(intent: android.content.Intent) {
+    override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        checkIntentForAlarm(intent)
+    }
 
-        val launchedByAlarm = isLaunchedByAlarmNotification()
-        if (launchedByAlarm) {
+    private fun checkIntentForAlarm(intent: Intent?) {
+        val payload = intent?.getStringExtra("payload")
+        if (payload != null && payload.startsWith("alarm:")) {
+            pendingAlarmPayload = payload
             runOnUiThread {
                 applyLockScreenBypass(enable = true)
-                pendingBypassEnable = true
             }
         }
     }
 
-    // 🚀 SECURE FIX: Lockscreen Overlay (Without Unlocking)
     private fun applyLockScreenBypass(enable: Boolean) {
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
 
         if (enable) {
-            // 1. Force Screen On
             if (wakeLock == null) {
                 @Suppress("DEPRECATION")
                 wakeLock = pm.newWakeLock(
@@ -95,24 +91,20 @@ class MainActivity : FlutterActivity() {
                 )
             }
             if (wakeLock?.isHeld == false) {
-                wakeLock?.acquire(10 * 60 * 1000L) // 10 minutes max
+                wakeLock?.acquire(10 * 60 * 1000L)
             }
 
-            // 2. Show Over Lock Screen (WITHOUT Unlocking Keyguard)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                 setShowWhenLocked(true)
                 setTurnScreenOn(true)
-                // ❌ REMOVED: requestDismissKeyguard (এটিই প্যাটার্ন বা পিন চাইতো!)
             }
             @Suppress("DEPRECATION")
             window.addFlags(
                 WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
                         WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
                         WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
-                // ❌ REMOVED: FLAG_DISMISS_KEYGUARD (লক স্ক্রিন রিমুভ করার কমান্ড বাতিল)
             )
         } else {
-            // Release Screen
             wakeLock?.let {
                 if (it.isHeld) it.release()
             }
@@ -130,12 +122,10 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun isLaunchedByAlarmNotification(): Boolean {
-        val intent = intent ?: return false
-        val payload = intent.getStringExtra("payload") ?: ""
-        val fromNotification = intent.getBooleanExtra(
-            "from_alarm_notification", false
-        )
+    private fun isLaunchedByAlarmNotification(intentToCheck: Intent?): Boolean {
+        val currentIntent = intentToCheck ?: return false
+        val payload = currentIntent.getStringExtra("payload") ?: ""
+        val fromNotification = currentIntent.getBooleanExtra("from_alarm_notification", false)
         return fromNotification || payload.startsWith("alarm:")
     }
 }
