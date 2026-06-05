@@ -1,7 +1,7 @@
 name: habitnode
-description: Habit Node - Track your daily habits easily
+description: Habit Node - Build powerful daily habits with smart alarms, study tracking, and AI-powered motivation.
 publish_to: 'none'
-version: 1.0.4+2
+version: 1.0.5+3
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
@@ -37,6 +37,7 @@ dependencies:
   connectivity_plus: ^6.0.3
   uuid: ^4.0.0
   permission_handler: ^11.3.1
+
   # ════════════════════════════════════════
   # GOOGLE DRIVE CLOUD BACKUP (NO LOCAL STORAGE)
   # ════════════════════════════════════════
@@ -58,7 +59,7 @@ dependencies:
   unity_ads_plugin: ^0.3.23
 
   # ════════════════════════════════════════
-  # NOTIFICATIONS
+  # NOTIFICATIONS & ALARMS
   # ════════════════════════════════════════
   flutter_local_notifications: ^17.2.4
   timezone: ^0.9.4
@@ -118,12 +119,20 @@ dev_dependencies:
   flutter_lints: ^4.0.0
   flutter_launcher_icons: ^0.14.1
 
+# ═══════════════════════════════════════════════════
+# FLUTTER CONFIGURATION
+# ═══════════════════════════════════════════════════
+
 flutter:
   uses-material-design: true
 
   assets:
     - assets/images/
     - assets/sounds/
+
+# ═══════════════════════════════════════════════════
+# 🚀 APP LAUNCHER ICONS
+# ═══════════════════════════════════════════════════
 
 flutter_launcher_icons:
   android: true
@@ -132,9 +141,35 @@ flutter_launcher_icons:
   min_sdk_android: 21
   remove_alpha_ios: true
 
+# ═══════════════════════════════════════════════════
+# 🎨 NATIVE SPLASH SCREEN
+# ═══════════════════════════════════════════════════
+
 flutter_native_splash:
-  color: "#000000"
+  # Light mode (Pre Android 12)
+  color: "#030712"
   image: assets/images/logovhir.png
+
+  # Dark mode (Pre Android 12)
+  color_dark: "#030712"
+  image_dark: assets/images/logovhir.png
+
+  # Android 12+ Premium Splash
   android_12:
-    color: "#000000"
+    color: "#030712"
+    color_dark: "#030712"
     image: assets/images/logovhir.png
+    image_dark: assets/images/logovhir.png
+    icon_background_color: "#030712"
+    icon_background_color_dark: "#030712"
+
+  # Fullscreen mode
+  fullscreen: true
+
+  # Platforms
+  android: true
+  ios: true
+  web: false
+
+  # iOS
+  ios_content_mode: center

@@ -3,69 +3,49 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-/// Lock Screen Bypass Controller
-///
-/// Default state: DISABLED — app সাধারণভাবে lock screen bypass করে না
-/// Alarm সময়: ENABLED — শুধু alarm screen lock screen-এ দেখায়
-/// Alarm শেষ: DISABLED — আবার normal secure state-এ ফিরে আসে
 class LockScreenService {
   static const MethodChannel _channel =
   MethodChannel('com.habit.node/lock_screen');
 
-  // Internal state tracker
-  static bool _bypassEnabled = false;
+  static bool _isEnabled = false;
+  static bool get isEnabled => _isEnabled;
 
-  // ─────────────────────────────────────────────
-  // Alarm screen খোলার সময় call করো
-  // Lock screen bypass enable করবে
-  // ─────────────────────────────────────────────
+  // 🔒 Enable lock screen bypass for alarm
   static Future<void> enableForAlarm() async {
-    if (_bypassEnabled) return;
     try {
       await _channel.invokeMethod('enableLockScreenBypass');
-      _bypassEnabled = true;
-      debugPrint('🔓 Lock screen bypass ENABLED (alarm only)');
+      _isEnabled = true;
+      debugPrint('🔒 Lock screen bypass ENABLED');
     } catch (e) {
       debugPrint('❌ enableForAlarm error: $e');
     }
   }
 
-  // ─────────────────────────────────────────────
-  // Alarm screen বন্ধ হলে call করো
-  // Normal secure state-এ ফিরে আসবে
-  // ─────────────────────────────────────────────
+  // 🔒 Disable lock screen bypass after alarm dismissed
   static Future<void> disableAfterAlarm() async {
-    if (!_bypassEnabled) return;
     try {
       await _channel.invokeMethod('disableLockScreenBypass');
-      _bypassEnabled = false;
-      debugPrint('🔒 Lock screen bypass DISABLED (back to normal)');
+      _isEnabled = false;
+      debugPrint('🔓 Lock screen bypass DISABLED');
     } catch (e) {
       debugPrint('❌ disableAfterAlarm error: $e');
     }
   }
 
-  // ─────────────────────────────────────────────
-  // App start-এ force disable
-  // Ensures always starts in secure state
-  // ─────────────────────────────────────────────
+  // 🔒 Force disable (used on app startup)
   static Future<void> forceDisable() async {
     try {
       await _channel.invokeMethod('disableLockScreenBypass');
-      _bypassEnabled = false;
-      debugPrint('🔒 Lock screen bypass FORCE DISABLED (app start)');
+      _isEnabled = false;
     } catch (e) {
       debugPrint('❌ forceDisable error: $e');
     }
   }
 
-  // ─────────────────────────────────────────────
-  // Device locked কিনা check করো
-  // ─────────────────────────────────────────────
+  // 🔒 Check if device is currently locked
   static Future<bool> isDeviceLocked() async {
     try {
-      final result =
-      await _channel.invokeMethod<bool>('isDeviceLocked');
+      final result = await _channel.invokeMethod<bool>('isDeviceLocked');
       return result ?? false;
     } catch (e) {
       debugPrint('❌ isDeviceLocked error: $e');
@@ -73,5 +53,20 @@ class LockScreenService {
     }
   }
 
-  static bool get isBypassEnabled => _bypassEnabled;
+  // 🔒 Check if alarm mode is active on native side
+  static Future<bool> isAlarmActive() async {
+    try {
+      final result = await _channel.invokeMethod<bool>('isAlarmActive');
+      return result ?? false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // 🔒 Clear pending alarm payload (after handling)
+  static Future<void> clearAlarmPayload() async {
+    try {
+      await _channel.invokeMethod('clearAlarmPayload');
+    } catch (_) {}
+  }
 }

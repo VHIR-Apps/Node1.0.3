@@ -54,7 +54,7 @@ class _SplashScreenState extends State<SplashScreen>
 
   bool _isAlarmLaunch = false;
 
-  // 🚀 FIX: সাউন্ড যেন অ্যাপ চলাকালীন আর কখনোই দ্বিতীয়বার না বাজে তার গার্ড
+  // ওয়েলকাম সাউন্ড যেন একবারের বেশি বাজে না
   static bool _welcomeSoundPlayed = false;
 
   static const List<Map<String, String>> _loadingSteps = [
@@ -186,7 +186,6 @@ class _SplashScreenState extends State<SplashScreen>
 
       // Step 1: Habits
       _updateStep(1);
-      // 🚀 FIX: আর্টিফিশিয়াল ডিলে বা লোডিং টাইম সরিয়ে দিয়েছি যাতে অ্যাপ ফাস্ট হয়
       _updateProgress(0.32);
 
       // Step 2: Badges
@@ -216,7 +215,7 @@ class _SplashScreenState extends State<SplashScreen>
       _updateStep(5);
       _updateProgress(1.0);
 
-      // 🚀 FIX: স্প্ল্যাশ স্ক্রিন অফলাইন-লুপে পড়লেও সাউন্ড জীবনেও দ্বিতীয়বার বাজবে না
+      // ✅ ওয়েলকাম সাউন্ড (শুধু একবার, প্রথম লঞ্চ বা অ্যালার্ম ছাড়া)
       if (!DatabaseService.isFirstLaunch() && !_isAlarmLaunch && !_welcomeSoundPlayed) {
         try {
           SoundService.playWelcome();
@@ -252,14 +251,12 @@ class _SplashScreenState extends State<SplashScreen>
         return;
       }
 
-      // Network check
       final isOnline = await _hasNetworkConnection();
       if (!isOnline) {
         debugPrint('📵 Splash restore: Offline — skipping');
         return;
       }
 
-      // Local data check
       final localProfile = DatabaseService.getLeaderboardProfileForUid(user.uid);
       final localHabits = DatabaseService.getAllHabits();
 
@@ -456,7 +453,7 @@ class _SplashScreenState extends State<SplashScreen>
     if (!mounted || _hasNavigated) return;
     _hasNavigated = true;
 
-    HapticFeedback.lightImpact();
+    HapticFeedback.lightImpact(); // কম্পন, শব্দ নয়
 
     final isFirstTime = DatabaseService.isFirstLaunch();
 
@@ -496,7 +493,7 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   // ─────────────────────────────────────────────
-  // BUILD
+  // BUILD (সব অ্যানিমেশনসহ)
   // ─────────────────────────────────────────────
 
   @override

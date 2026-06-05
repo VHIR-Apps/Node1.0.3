@@ -8,7 +8,7 @@ class AppConfig {
   static const String appName = 'Habit Node';
   static const String appTagline = 'Track your daily habits easily';
   static const String logoPath = 'assets/images/logo.png';
-  static const String version = '1.0.4';
+  static const String version = '1.0.5';
   static const String buildNumber = '1';
 
   static const Color primaryColor = Color(0xFF6C63FF);

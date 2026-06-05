@@ -37,10 +37,17 @@ class _AlarmScreenState extends State<AlarmScreen>
   late final Animation<double> _entryScale;
 
   bool _isBusy = false;
-
-  // ✅ FIX: _alarmStarted সবসময় true ধরবো
-  // ensureStopped() force stop করবে
   bool _alarmStarted = false;
+  bool _isDismissing = false;
+
+  // 🔒 SECURITY: Device lock state monitor
+  Timer? _securityWatchdog;
+  Timer? _soundWatchdog;
+  bool _wasLockedAtStart = false;
+
+  // 🔒 SECURITY: Native channel for lock state check
+  static const MethodChannel _lockChannel =
+  MethodChannel('com.habit.node/lock_screen');
 
   Color get _habitColor => Color(widget.habit.colorValue);
 
@@ -62,39 +69,45 @@ class _AlarmScreenState extends State<AlarmScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
+    // 🔒 SECURITY: Check initial lock state
+    _checkInitialLockState();
+
     // Lock screen bypass enable
     unawaited(LockScreenService.enableForAlarm());
 
-    // Full immersive
+    // 🔒 SECURITY: Full immersive — hide all system UI
     SystemChrome.setEnabledSystemUIMode(
       SystemUiMode.immersiveSticky,
+      overlays: [],
     );
 
-    // Pulse for orb
+    // 🔒 SECURITY: Disable system back gesture
+    SystemChannels.platform.invokeMethod('SystemNavigator.routeUpdated', {
+      'routeName': '/alarm',
+      'state': null,
+    });
+
+    // Initialize animations
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
     )..repeat(reverse: true);
 
-    // Ring expanding waves
     _ringController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2400),
     )..repeat();
 
-    // Rotating gradient
     _rotateController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 30),
     )..repeat();
 
-    // Shimmer on title
     _shimmerController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2200),
     )..repeat();
 
-    // Entry animation
     _entryController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 700),
@@ -114,23 +127,98 @@ class _AlarmScreenState extends State<AlarmScreen>
 
     _entryController.forward();
 
-    // ✅ Alarm শুরু করো
+    // Start alarm
     unawaited(_startAlarmSafely());
+
+    // 🔒 SECURITY: Start watchdogs
+    _startSecurityWatchdog();
+    _startSoundWatchdog();
   }
 
-  // ✅ FIX: Sound block করবে না
+  // 🔒 Check if device was locked when alarm started
+  Future<void> _checkInitialLockState() async {
+    try {
+      final isLocked = await _lockChannel.invokeMethod<bool>('isDeviceLocked');
+      _wasLockedAtStart = isLocked ?? false;
+      debugPrint('🔒 Device was locked at alarm start: $_wasLockedAtStart');
+    } catch (e) {
+      debugPrint('❌ Lock state check failed: $e');
+      _wasLockedAtStart = false;
+    }
+  }
+
+  // 🔒 SECURITY WATCHDOG
+  // প্রতি 500ms চেক করে — যদি কোনোভাবে এই screen থেকে বের হয়,
+  // সাথে সাথে আবার alarm screen এ ফিরিয়ে আনে
+  void _startSecurityWatchdog() {
+    _securityWatchdog?.cancel();
+    _securityWatchdog = Timer.periodic(
+      const Duration(milliseconds: 500),
+          (timer) async {
+        if (_isDismissing) {
+          timer.cancel();
+          return;
+        }
+
+        if (!mounted) {
+          timer.cancel();
+          return;
+        }
+
+        // 🔒 Force ensure lock screen bypass is still active
+        try {
+          await LockScreenService.enableForAlarm();
+        } catch (_) {}
+
+        // 🔒 Force ensure system UI hidden
+        try {
+          SystemChrome.setEnabledSystemUIMode(
+            SystemUiMode.immersiveSticky,
+            overlays: [],
+          );
+        } catch (_) {}
+      },
+    );
+  }
+
+  // 🔒 SOUND WATCHDOG
+  // যদি sound কোনোভাবে বন্ধ হয়, আবার চালু করে
+  void _startSoundWatchdog() {
+    _soundWatchdog?.cancel();
+    _soundWatchdog = Timer.periodic(
+      const Duration(seconds: 3),
+          (timer) async {
+        if (_isDismissing) {
+          timer.cancel();
+          return;
+        }
+
+        if (!mounted) {
+          timer.cancel();
+          return;
+        }
+
+        // 🔒 যদি sound বন্ধ হয়ে যায়, আবার চালু করো
+        if (!AlarmService.isRinging) {
+          debugPrint('🔄 Sound watchdog: restarting alarm');
+          try {
+            await AlarmService.startAlarm(habit: widget.habit);
+          } catch (_) {}
+        }
+      },
+    );
+  }
+
   Future<void> _startAlarmSafely() async {
     try {
       await AlarmService.startAlarm(habit: widget.habit);
     } catch (e) {
       debugPrint('❌ Alarm start failed: $e');
     } finally {
-      // ✅ Error হলেও true — dispose এ ensureStopped চলবে
       if (mounted) setState(() => _alarmStarted = true);
     }
   }
 
-  // ✅ FIX: সবসময় stop করবে
   Future<void> _stopAlarmSafely() async {
     try {
       await AlarmService.ensureStopped();
@@ -141,8 +229,49 @@ class _AlarmScreenState extends State<AlarmScreen>
     }
   }
 
+  // 🔒 SECURITY: App lifecycle monitoring
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+
+    if (_isDismissing) return;
+
+    debugPrint('🔒 Alarm screen lifecycle: $state');
+
+    // 🔒 যদি app pause/inactive হয়, sound চালু রাখো
+    // এবং re-enable lock screen bypass
+    if (state == AppLifecycleState.resumed) {
+      // Resume হলে নিশ্চিত করো sound চলছে
+      _ensureAlarmStillRinging();
+
+      // আবার immersive mode
+      SystemChrome.setEnabledSystemUIMode(
+        SystemUiMode.immersiveSticky,
+        overlays: [],
+      );
+
+      // Lock screen bypass আবার enable
+      unawaited(LockScreenService.enableForAlarm());
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      // Pause হলেও sound চালু থাকবে (alarm service background এ চলবে)
+      debugPrint('⚠️ App paused but alarm sound continues');
+    }
+  }
+
+  Future<void> _ensureAlarmStillRinging() async {
+    if (!AlarmService.isRinging && !_isDismissing) {
+      try {
+        await AlarmService.startAlarm(habit: widget.habit);
+      } catch (_) {}
+    }
+  }
+
   @override
   void dispose() {
+    _securityWatchdog?.cancel();
+    _soundWatchdog?.cancel();
+
     WidgetsBinding.instance.removeObserver(this);
 
     _pulseController.dispose();
@@ -151,10 +280,7 @@ class _AlarmScreenState extends State<AlarmScreen>
     _shimmerController.dispose();
     _entryController.dispose();
 
-    // ✅ FIX: ensureStopped — force stop
     unawaited(AlarmService.ensureStopped());
-
-    // Lock screen bypass disable
     unawaited(LockScreenService.disableAfterAlarm());
 
     SystemChrome.setEnabledSystemUIMode(
@@ -168,22 +294,27 @@ class _AlarmScreenState extends State<AlarmScreen>
   // ACTIONS
   // ─────────────────────────────────────────────
 
-  Future<void> _runAction(
-      Future<void> Function() action,
-      ) async {
+  Future<void> _runAction(Future<void> Function() action) async {
     if (_isBusy) return;
     if (mounted) setState(() => _isBusy = true);
 
+    // 🔒 SECURITY: Mark as dismissing — watchdogs will stop
+    _isDismissing = true;
+    _securityWatchdog?.cancel();
+    _soundWatchdog?.cancel();
+
     try {
-      // ✅ আগে alarm বন্ধ করো
       await _stopAlarmSafely();
-      // তারপর action করো
       await action();
-      // তারপর screen বন্ধ করো
       if (mounted) await _closeScreen();
     } catch (e) {
       debugPrint('❌ Alarm action failed: $e');
-      if (mounted) setState(() => _isBusy = false);
+      if (mounted) {
+        setState(() => _isBusy = false);
+        _isDismissing = false;
+        _startSecurityWatchdog();
+        _startSoundWatchdog();
+      }
     }
   }
 
@@ -191,9 +322,7 @@ class _AlarmScreenState extends State<AlarmScreen>
     HapticFeedback.mediumImpact();
     unawaited(
       _runAction(() async {
-        await NotificationService.dismissAlarmForToday(
-          widget.habit,
-        );
+        await NotificationService.dismissAlarmForToday(widget.habit);
       }),
     );
   }
@@ -202,9 +331,7 @@ class _AlarmScreenState extends State<AlarmScreen>
     HapticFeedback.lightImpact();
     unawaited(
       _runAction(() async {
-        await NotificationService.dismissAlarmForToday(
-          widget.habit,
-        );
+        await NotificationService.dismissAlarmForToday(widget.habit);
         await NotificationService.scheduleSnoozeAlarm(
           habit: widget.habit,
           delay: const Duration(minutes: 5),
@@ -215,12 +342,21 @@ class _AlarmScreenState extends State<AlarmScreen>
 
   Future<void> _closeScreen() async {
     if (!mounted) return;
+
+    // 🔒 SECURITY: যদি device locked অবস্থায় alarm এসেছিল,
+    // তাহলে app পুরোপুরি বন্ধ করো — dashboard এ ফেরা যাবে না
+    if (_wasLockedAtStart) {
+      debugPrint('🔒 Device was locked — closing app completely');
+      await Future.delayed(const Duration(milliseconds: 200));
+      await SystemNavigator.pop();
+      return;
+    }
+
+    // App ওপেন অবস্থায় alarm এসেছিল — শুধু alarm screen pop করো
     final navigator = Navigator.of(context);
-    // ✅ Pop করলে আগের screen এই থাকবে
     if (navigator.canPop()) {
       navigator.pop();
     } else {
-      // App kill থেকে alarm খুলেছিলে
       await SystemNavigator.pop();
     }
   }
@@ -235,9 +371,15 @@ class _AlarmScreenState extends State<AlarmScreen>
     final size = MediaQuery.of(context).size;
     final isSmallScreen = size.height < 700;
 
-    return WillPopScope(
-      // ✅ Back button disable — dismiss button দিয়েই বন্ধ করতে হবে
-      onWillPop: () async => false,
+    // 🔒 SECURITY: PopScope (Flutter 3.12+) সব back gesture block করে
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) {
+        if (didPop) return;
+        // 🔒 Back press করলে কিছুই হবে না
+        HapticFeedback.heavyImpact();
+        debugPrint('🔒 Back press blocked — must use Stop/Snooze');
+      },
       child: AnnotatedRegion<SystemUiOverlayStyle>(
         value: SystemUiOverlayStyle.light.copyWith(
           statusBarColor: Colors.transparent,
@@ -247,6 +389,8 @@ class _AlarmScreenState extends State<AlarmScreen>
         ),
         child: Scaffold(
           backgroundColor: const Color(0xFF030712),
+          // 🔒 SECURITY: resizeToAvoidBottomInset false — keyboard আসতে পারবে না
+          resizeToAvoidBottomInset: false,
           body: Stack(
             children: [
               // ANIMATED BACKGROUND
@@ -254,8 +398,7 @@ class _AlarmScreenState extends State<AlarmScreen>
                 child: _buildAnimatedBackground(primary),
               ),
 
-              // 🚀 PERFORMANCE FIX: Removed heavy BackdropFilter
-              // Using a simple dark overlay instead for performance
+              // Dark overlay
               Positioned.fill(
                 child: Container(
                   color: Colors.black.withOpacity(0.65),
@@ -277,7 +420,6 @@ class _AlarmScreenState extends State<AlarmScreen>
                         children: [
                           _buildTopStatus(primary),
                           SizedBox(height: isSmallScreen ? 16 : 24),
-                          // 🚀 PERFORMANCE FIX: Clock isolated in its own widget
                           _LiveClockWidget(habitColor: primary),
                           SizedBox(height: isSmallScreen ? 20 : 36),
                           Expanded(
@@ -421,7 +563,7 @@ class _AlarmScreenState extends State<AlarmScreen>
                     ),
                     const SizedBox(width: 10),
                     const Icon(
-                      Icons.notifications_active_rounded,
+                      Icons.lock_rounded,
                       color: Colors.white,
                       size: 15,
                     ),
@@ -448,7 +590,6 @@ class _AlarmScreenState extends State<AlarmScreen>
       child: Stack(
         alignment: Alignment.center,
         children: [
-          // Expanding Wave Rings
           AnimatedBuilder(
             animation: _ringController,
             builder: (context, _) {
@@ -478,8 +619,6 @@ class _AlarmScreenState extends State<AlarmScreen>
               );
             },
           ),
-
-          // Outer Glow
           ScaleTransition(
             scale: Tween<double>(begin: 0.9, end: 1.05).animate(
               CurvedAnimation(
@@ -509,9 +648,6 @@ class _AlarmScreenState extends State<AlarmScreen>
               ),
             ),
           ),
-
-          // 🚀 PERFORMANCE FIX: Removed BackdropFilter inside orb
-          // Used a solid gradient overlay which is 100x faster to render
           Container(
             width: orbSize - 30,
             height: orbSize - 30,
@@ -541,7 +677,8 @@ class _AlarmScreenState extends State<AlarmScreen>
               child: AnimatedBuilder(
                 animation: _pulseController,
                 builder: (context, _) {
-                  final scale = 1.0 + (math.sin(_pulseController.value * math.pi) * 0.08);
+                  final scale = 1.0 +
+                      (math.sin(_pulseController.value * math.pi) * 0.08);
                   return Transform.scale(
                     scale: scale,
                     child: Text(
@@ -571,14 +708,12 @@ class _AlarmScreenState extends State<AlarmScreen>
   // ─────────────────────────────────────────────
 
   Widget _buildInfoCard(Color primary) {
-    // 🚀 PERFORMANCE FIX: Removed heavy BackdropFilter
-    // Used opaque styling to maintain the premium look smoothly
     return ClipRRect(
       borderRadius: BorderRadius.circular(28),
       child: Container(
         padding: const EdgeInsets.all(22),
         decoration: BoxDecoration(
-          color: const Color(0xFF131B2C).withOpacity(0.95), // Dark solid color instead of blur
+          color: const Color(0xFF131B2C).withOpacity(0.95),
           borderRadius: BorderRadius.circular(28),
           border: Border.all(
             color: Colors.white.withOpacity(0.1),
@@ -685,7 +820,6 @@ class _AlarmScreenState extends State<AlarmScreen>
   Widget _buildActionButtons(Color primary) {
     return Column(
       children: [
-        // STOP ALARM
         Container(
           width: double.infinity,
           decoration: BoxDecoration(
@@ -704,9 +838,7 @@ class _AlarmScreenState extends State<AlarmScreen>
               onTap: _isBusy ? null : _dismissAlarm,
               borderRadius: BorderRadius.circular(22),
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                  vertical: 20,
-                ),
+                padding: const EdgeInsets.symmetric(vertical: 20),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(22),
                   gradient: LinearGradient(
@@ -755,10 +887,7 @@ class _AlarmScreenState extends State<AlarmScreen>
             ),
           ),
         ),
-
         const SizedBox(height: 12),
-
-        // SNOOZE
         Container(
           width: double.infinity,
           decoration: BoxDecoration(
@@ -774,9 +903,7 @@ class _AlarmScreenState extends State<AlarmScreen>
               onTap: _isBusy ? null : _snoozeAlarm,
               borderRadius: BorderRadius.circular(22),
               child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  vertical: 16,
-                ),
+                padding: const EdgeInsets.symmetric(vertical: 16),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -807,7 +934,7 @@ class _AlarmScreenState extends State<AlarmScreen>
 }
 
 // ─────────────────────────────────────────────
-// 🚀 NEW: ISOLATED LIVE CLOCK WIDGET (PERFORMANCE FIX)
+// LIVE CLOCK WIDGET
 // ─────────────────────────────────────────────
 class _LiveClockWidget extends StatefulWidget {
   final Color habitColor;
@@ -846,7 +973,10 @@ class _LiveClockWidgetState extends State<_LiveClockWidget> {
   }
 
   String _formatDate(DateTime time) {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     return '${days[time.weekday - 1]}, ${time.day} ${months[time.month - 1]}';
   }
