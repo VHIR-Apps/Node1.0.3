@@ -111,14 +111,20 @@ class _LifeTreeWidgetState extends State<LifeTreeWidget>
   late final Animation<double> _fruitAnim;
   late final Animation<double> _growthAnim;
 
-  late double _health;
-  double _prevHealth = -1.0;
+  late double _levelFactor;        // 0..1 based on level only
+  double _prevLevelFactor = -1.0;
+
+  // অন্যান্য মেট্রিক থেকে প্রাপ্ত "health" (শুধু রঙ ও ফলের ঘনত্বের জন্য)
+  late double _vitality;           // 0..1 (uses streak, study, habits)
+  double _prevVitality = -1.0;
 
   @override
   void initState() {
     super.initState();
-    _health = _computeHealth();
-    _prevHealth = _health;
+    _levelFactor = _computeLevelFactor();
+    _vitality    = _computeVitality();
+    _prevLevelFactor = _levelFactor;
+    _prevVitality    = _vitality;
 
     // 🌬️ Wind sway
     _swayCtrl = AnimationController(
@@ -147,7 +153,7 @@ class _LifeTreeWidgetState extends State<LifeTreeWidget>
       CurvedAnimation(parent: _fruitCtrl, curve: Curves.easeInOut),
     );
 
-    // 🌱 Growth burst (health change এ একবার চলে)
+    // 🌱 Growth burst (level বা vitality পরিবর্তনে চালানো হবে)
     _growthCtrl = AnimationController(
       vsync:    this,
       duration: const Duration(milliseconds: 900),
@@ -158,16 +164,43 @@ class _LifeTreeWidgetState extends State<LifeTreeWidget>
     );
   }
 
+  double _computeLevelFactor() {
+    // ধরা যাক সর্বোচ্চ লেভেল = 20 (আপনার অ্যাপ অনুযায়ী বদলাতে পারেন)
+    const maxLevel = 20;
+    return (widget.level / maxLevel).clamp(0.0, 1.0);
+  }
+
+  double _computeVitality() {
+    final streakScore = (widget.bestStreak / 100.0).clamp(0.0, 1.0);
+    final studyScore  = (widget.totalStudyMinutes / 3000.0).clamp(0.0, 1.0);
+    final habitScore  = widget.todayCompletionRate.clamp(0.0, 1.0);
+
+    return ((streakScore * 0.4) +
+        (studyScore  * 0.3) +
+        (habitScore  * 0.3))
+        .clamp(0.0, 1.0);
+  }
+
   @override
   void didUpdateWidget(LifeTreeWidget old) {
     super.didUpdateWidget(old);
-    final newH = _computeHealth();
-    if ((_prevHealth - newH).abs() > 0.02) {
+    bool needGrowth = false;
+
+    final newLevelFactor = _computeLevelFactor();
+    if ((_levelFactor - newLevelFactor).abs() > 0.02) {
+      _levelFactor = newLevelFactor;
+      needGrowth = true;
+    }
+
+    final newVitality = _computeVitality();
+    if ((_vitality - newVitality).abs() > 0.02) {
+      _vitality = newVitality;
+      needGrowth = true;
+    }
+
+    if (needGrowth) {
       _growthCtrl.forward(from: 0.0);
-      setState(() {
-        _health    = newH;
-        _prevHealth = newH;
-      });
+      setState(() {});
     }
   }
 
@@ -180,34 +213,20 @@ class _LifeTreeWidgetState extends State<LifeTreeWidget>
     super.dispose();
   }
 
-  // ── Health formula ────────────────────────────────────────────────────────
-  double _computeHealth() {
-    final levelScore  = (widget.level / 20.0).clamp(0.0, 1.0);
-    final streakScore = (widget.bestStreak / 100.0).clamp(0.0, 1.0);
-    final studyScore  = (widget.totalStudyMinutes / 3000.0).clamp(0.0, 1.0);
-    final habitScore  = widget.todayCompletionRate.clamp(0.0, 1.0);
-
-    return ((levelScore  * 0.35) +
-        (streakScore * 0.25) +
-        (studyScore  * 0.20) +
-        (habitScore  * 0.20))
-        .clamp(0.0, 1.0);
-  }
-
-  // ── Stage labels ──────────────────────────────────────────────────────────
-  static String _label(double h) {
-    if (h < 0.15) return 'Seedling 🌱';
-    if (h < 0.35) return 'Sapling 🌿';
-    if (h < 0.55) return 'Young Tree 🌳';
-    if (h < 0.75) return 'Mature Tree 🌲';
+  // ── Stage labels (লেভেল ফ্যাক্টরের উপর ভিত্তি করে) ────────────────────────
+  static String _label(double levelFactor) {
+    if (levelFactor < 0.15) return 'Seedling 🌱';
+    if (levelFactor < 0.35) return 'Sapling 🌿';
+    if (levelFactor < 0.55) return 'Young Tree 🌳';
+    if (levelFactor < 0.75) return 'Mature Tree 🌲';
     return 'Ancient Tree 🌴';
   }
 
-  static Color _labelColor(double h) {
-    if (h < 0.15) return const Color(0xFF86EFAC);
-    if (h < 0.35) return const Color(0xFF4ADE80);
-    if (h < 0.55) return const Color(0xFF22C55E);
-    if (h < 0.75) return const Color(0xFF16A34A);
+  static Color _labelColor(double levelFactor) {
+    if (levelFactor < 0.15) return const Color(0xFF86EFAC);
+    if (levelFactor < 0.35) return const Color(0xFF4ADE80);
+    if (levelFactor < 0.55) return const Color(0xFF22C55E);
+    if (levelFactor < 0.75) return const Color(0xFF16A34A);
     return const Color(0xFFFFD700);
   }
 
@@ -217,7 +236,7 @@ class _LifeTreeWidgetState extends State<LifeTreeWidget>
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Tree canvas — RepaintBoundary দিয়ে isolate করা
+        // Tree canvas
         RepaintBoundary(
           child: AnimatedBuilder(
             animation: Listenable.merge(
@@ -225,11 +244,12 @@ class _LifeTreeWidgetState extends State<LifeTreeWidget>
             builder: (_, __) => CustomPaint(
               size: Size(widget.width, widget.height),
               painter: LifeTreePainter(
-                health:      _health,
-                swayAngle:   _swayAnim.value,
-                pulseScale:  _pulseAnim.value,
-                fruitPhase:  _fruitAnim.value,
-                growthScale: 0.85 + (_growthAnim.value * 0.20),
+                levelFactor:   _levelFactor,
+                vitality:      _vitality,
+                swayAngle:     _swayAnim.value,
+                pulseScale:    _pulseAnim.value,
+                fruitPhase:    _fruitAnim.value,
+                growthScale:   0.85 + (_growthAnim.value * 0.20),
               ),
             ),
           ),
@@ -241,12 +261,12 @@ class _LifeTreeWidgetState extends State<LifeTreeWidget>
         AnimatedSwitcher(
           duration: const Duration(milliseconds: 500),
           child: Text(
-            _label(_health),
-            key: ValueKey(_label(_health)),
+            _label(_levelFactor),
+            key: ValueKey(_label(_levelFactor)),
             style: TextStyle(
               fontSize:   11,
               fontWeight: FontWeight.w800,
-              color:      _labelColor(_health),
+              color:      _labelColor(_levelFactor),
               letterSpacing: 0.3,
             ),
           ),
@@ -254,7 +274,7 @@ class _LifeTreeWidgetState extends State<LifeTreeWidget>
 
         const SizedBox(height: 4),
 
-        // Health bar
+        // Health bar (এখন এটি vitality দেখাবে, তবে ঐচ্ছিক)
         SizedBox(
           width:  widget.width * 0.75,
           height: 5,
@@ -262,29 +282,27 @@ class _LifeTreeWidgetState extends State<LifeTreeWidget>
             borderRadius: BorderRadius.circular(10),
             child: Stack(
               children: [
-                // Track
                 Container(
                   decoration: BoxDecoration(
                     color: Colors.white.withOpacity(0.12),
                     borderRadius: BorderRadius.circular(10),
                   ),
                 ),
-                // Fill
                 FractionallySizedBox(
-                  widthFactor: _health,
+                  widthFactor: _vitality,
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 700),
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: [
-                          _labelColor(_health).withOpacity(0.75),
-                          _labelColor(_health),
+                          _labelColor(_levelFactor).withOpacity(0.75),
+                          _labelColor(_levelFactor),
                         ],
                       ),
                       borderRadius: BorderRadius.circular(10),
                       boxShadow: [
                         BoxShadow(
-                          color:      _labelColor(_health).withOpacity(0.5),
+                          color: _labelColor(_levelFactor).withOpacity(0.5),
                           blurRadius: 6,
                         ),
                       ],
@@ -301,50 +319,52 @@ class _LifeTreeWidgetState extends State<LifeTreeWidget>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CUSTOM PAINTER
+// CUSTOM PAINTER — এখন levelFactor দিয়ে আকার, vitality দিয়ে রঙ/ঘনত্ব
 // ─────────────────────────────────────────────────────────────────────────────
 
 class LifeTreePainter extends CustomPainter {
-  final double health;
+  final double levelFactor;   // 0..1 based on level (determines size)
+  final double vitality;      // 0..1 based on streak, study, habits (determines colour & extras)
   final double swayAngle;
   final double pulseScale;
   final double fruitPhase;
   final double growthScale;
 
   LifeTreePainter({
-    required this.health,
+    required this.levelFactor,
+    required this.vitality,
     required this.swayAngle,
     required this.pulseScale,
     required this.fruitPhase,
     required this.growthScale,
   });
 
-  // ── Stage ──────────────────────────────────────────────────────────────────
-  bool get _isSeedling => health < 0.15;
-  bool get _isSapling  => health >= 0.15 && health < 0.35;
-  bool get _isYoung    => health >= 0.35 && health < 0.55;
-  bool get _isMature   => health >= 0.55 && health < 0.75;
-  bool get _isAncient  => health >= 0.75;
+  // ── Stage based on levelFactor ──────────────────────────────────────────
+  bool get _isSeedling => levelFactor < 0.15;
+  bool get _isSapling  => levelFactor >= 0.15 && levelFactor < 0.35;
+  bool get _isYoung    => levelFactor >= 0.35 && levelFactor < 0.55;
+  bool get _isMature   => levelFactor >= 0.55 && levelFactor < 0.75;
+  bool get _isAncient  => levelFactor >= 0.75;
 
   // ── Trunk colours (fixed) ──────────────────────────────────────────────────
   static const _trunkDark  = Color(0xFF78350F);
   static const _trunkLight = Color(0xFFA16207);
 
-  // ── Leaf colour — health দিয়ে ধীরে ধীরে বদলায় ──────────────────────────
-  //   health 1.0 → গাঢ় সবুজ
-  //   health 0.5 → হলুদ-সবুজ
-  //   health 0.15 → ধূসর
-  //   health 0.0 → ছাই রঙ
+  // ── Leaf colour — now driven by vitality (health of the tree) ────────────
+  //   vitality 1.0 → গাঢ় সবুজ
+  //   vitality 0.5 → হলুদ-সবুজ
+  //   vitality 0.15 → ধূসর
+  //   vitality 0.0 → ছাই রঙ
   Color get _leafColor {
-    if (health > 0.5) {
-      final t = ((health - 0.5) / 0.5).clamp(0.0, 1.0);
+    if (vitality > 0.5) {
+      final t = ((vitality - 0.5) / 0.5).clamp(0.0, 1.0);
       return Color.lerp(
         const Color(0xFFBEF264), // হলুদ-সবুজ
         const Color(0xFF15803D), // গাঢ় সবুজ
         t,
       )!;
-    } else if (health > 0.15) {
-      final t = ((health - 0.15) / 0.35).clamp(0.0, 1.0);
+    } else if (vitality > 0.15) {
+      final t = ((vitality - 0.15) / 0.35).clamp(0.0, 1.0);
       return Color.lerp(
         const Color(0xFF9CA3AF), // ধূসর (অসুস্থ)
         const Color(0xFFFBBF24), // হলুদ-কমলা (মাঝামাঝি)
@@ -355,15 +375,15 @@ class LifeTreePainter extends CustomPainter {
   }
 
   Color get _leafHighlight {
-    if (health > 0.5) {
-      final t = ((health - 0.5) / 0.5).clamp(0.0, 1.0);
+    if (vitality > 0.5) {
+      final t = ((vitality - 0.5) / 0.5).clamp(0.0, 1.0);
       return Color.lerp(
         const Color(0xFFD9F99D),
         const Color(0xFF4ADE80),
         t,
       )!;
-    } else if (health > 0.15) {
-      final t = ((health - 0.15) / 0.35).clamp(0.0, 1.0);
+    } else if (vitality > 0.15) {
+      final t = ((vitality - 0.15) / 0.35).clamp(0.0, 1.0);
       return Color.lerp(
         const Color(0xFFD1D5DB),
         const Color(0xFFFDE68A),
@@ -373,11 +393,11 @@ class LifeTreePainter extends CustomPainter {
     return const Color(0xFF9CA3AF);
   }
 
-  // অসুস্থ গাছ — ডাল নিচের দিকে ঝুলে
-  double get _droop => (1.0 - health) * 0.40;
+  // অসুস্থ গাছ — ডাল নিচের দিকে ঝুলে (vitality কমে গেলে droop বেড়ে)
+  double get _droop => (1.0 - vitality) * 0.40;
 
-  // পাতার ঘনত্ব — মরা গাছে কম পাতা
-  double get _density => health.clamp(0.15, 1.0);
+  // পাতার ঘনত্ব — vitality কমে গেলে কম পাতা
+  double get _density => vitality.clamp(0.15, 1.0);
 
   Color get _fruitColor {
     if (_isAncient) return const Color(0xFFFFD700);
@@ -387,6 +407,13 @@ class LifeTreePainter extends CustomPainter {
 
   Color get _flowerColor =>
       _isAncient ? const Color(0xFFF0ABFC) : const Color(0xFFFBCFE8);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // SCALING HELPER — levelFactor থেকে আকার বের করা
+  // ─────────────────────────────────────────────────────────────────────────
+  double _scale(double minVal, double maxVal) {
+    return minVal + (maxVal - minVal) * levelFactor;
+  }
 
   // ─────────────────────────────────────────────────────────────────────────
   // PAINT
@@ -419,10 +446,11 @@ class LifeTreePainter extends CustomPainter {
   // ─────────────────────────────────────────────────────────────────────────
 
   void _drawGround(Canvas canvas, double cx, double groundY) {
+    final shadowWidth = _scale(40, 110);
     canvas.drawOval(
       Rect.fromCenter(
         center: Offset(cx, groundY + 4),
-        width:  96,
+        width:  shadowWidth,
         height: 20,
       ),
       Paint()
@@ -443,41 +471,39 @@ class LifeTreePainter extends CustomPainter {
   // ─────────────────────────────────────────────────────────────────────────
 
   void _drawSeedling(Canvas canvas, double cx, double groundY) {
-    final stemH = 28.0 + health * 60;
+    final stemH = _scale(18, 50);
 
-    // সুস্থতা অনুযায়ী stem রঙ
     final stemColor = Color.lerp(
       const Color(0xFF6B7280),
       const Color(0xFF4ADE80),
-      (health / 0.15).clamp(0.0, 1.0),
+      vitality,
     )!;
 
-    // সুস্থতা অনুযায়ী sway — মরা গাছ বেশি দুলবে না
     canvas.save();
     canvas.translate(cx, groundY - stemH / 2);
     canvas.rotate(swayAngle);
     canvas.translate(-cx, -(groundY - stemH / 2));
 
-    // Stem
     canvas.drawLine(
       Offset(cx, groundY),
       Offset(cx, groundY - stemH),
       Paint()
         ..color       = stemColor
-        ..strokeWidth = 3.0
+        ..strokeWidth = _scale(2.0, 4.0)
         ..strokeCap   = StrokeCap.round
         ..style       = PaintingStyle.stroke,
     );
 
-    // ২টি ছোট পাতা
+    final leafW = _scale(8, 15) * pulseScale;
+    final leafH = _scale(12, 22) * pulseScale;
     _ovalLeaf(canvas,
-      center: Offset(cx - 11, groundY - stemH + 8),
-      w: 13 * pulseScale, h: 20 * pulseScale,
+      center: Offset(cx - 8, groundY - stemH + 6),
+      w: leafW, h: leafH,
       angle: -0.45,
     );
     _ovalLeaf(canvas,
-      center: Offset(cx + 11, groundY - stemH + 12),
-      w: 13 * pulseScale, h: 20 * pulseScale,
+      center: Offset(cx + 8, groundY - stemH + 8),
+      w: leafW, h: leafH,
       angle: 0.45,
     );
 
@@ -489,31 +515,34 @@ class LifeTreePainter extends CustomPainter {
   // ─────────────────────────────────────────────────────────────────────────
 
   void _drawSapling(Canvas canvas, double cx, double groundY) {
-    final trunkH = 55.0 + health * 30;
+    final trunkH = _scale(40, 80);
+    final trunkW = _scale(5, 10);
 
     canvas.save();
     canvas.translate(cx, groundY - trunkH / 2);
     canvas.rotate(swayAngle * 0.8);
     canvas.translate(-cx, -(groundY - trunkH / 2));
 
-    _trunk(canvas, cx, groundY, trunkH, 7.0);
+    _trunk(canvas, cx, groundY, trunkH, trunkW);
 
-    // ২টি ডাল
+    final branchLen = _scale(16, 30);
     _branch(canvas,
       start: Offset(cx, groundY - trunkH * 0.55),
-      angle: -0.70 + _droop, len: 22, w: 3.0,
+      angle: -0.70 + _droop, len: branchLen, w: _scale(2.5, 4.0),
     );
     _branch(canvas,
       start: Offset(cx, groundY - trunkH * 0.65),
-      angle:  0.70 - _droop, len: 22, w: 3.0,
+      angle:  0.70 - _droop, len: branchLen, w: _scale(2.5, 4.0),
     );
 
-    // ছোট canopy
-    final cc = Offset(cx, groundY - trunkH - 16);
+    final cc = Offset(cx, groundY - trunkH - 10);
+    final canopyRadius = _scale(14, 26);
+    final leafSize = _scale(10, 18);
     _canopy(canvas,
       center: cc,
-      count:    (_density * 6).round().clamp(2, 6),
-      radius:   20, leafSize: 16,
+      count:   (_density * 6).round().clamp(2, 6),
+      radius:  canopyRadius,
+      leafSize: leafSize,
     );
 
     canvas.restore();
@@ -524,38 +553,43 @@ class LifeTreePainter extends CustomPainter {
   // ─────────────────────────────────────────────────────────────────────────
 
   void _drawYoung(Canvas canvas, double cx, double groundY) {
-    const trunkH = 74.0;
+    final trunkH = _scale(55, 100);
+    final trunkW = _scale(8, 15);
 
     canvas.save();
     canvas.translate(cx, groundY - trunkH / 2);
     canvas.rotate(swayAngle * 0.65);
     canvas.translate(-cx, -(groundY - trunkH / 2));
 
-    _trunk(canvas, cx, groundY, trunkH, 11.0);
+    _trunk(canvas, cx, groundY, trunkH, trunkW);
 
-    // ৩ জোড়া ডাল
     for (int i = 0; i < 3; i++) {
       final t = 0.45 + i * 0.15;
       final a = 0.52 + i * 0.15;
+      final len = _scale(20, 38) - i * 4;
+      final w = _scale(3.0, 5.5) - i * 0.5;
       _branch(canvas,
         start: Offset(cx, groundY - trunkH * t),
-        angle: -(a) + _droop, len: 28.0 - i * 4, w: 4.2 - i * 0.5,
+        angle: -(a) + _droop, len: len, w: w,
       );
       _branch(canvas,
         start: Offset(cx, groundY - trunkH * t),
-        angle:   a  - _droop, len: 28.0 - i * 4, w: 4.2 - i * 0.5,
+        angle:   a  - _droop, len: len, w: w,
       );
     }
 
-    final cc = Offset(cx, groundY - trunkH - 26);
+    final cc = Offset(cx, groundY - trunkH - 18);
+    final canopyRadius = _scale(20, 38);
+    final leafSize = _scale(14, 26);
     _canopy(canvas,
-      center:   cc,
-      count:    (_density * 9).round().clamp(3, 9),
-      radius:   30, leafSize: 22,
+      center: cc,
+      count:  (_density * 9).round().clamp(3, 9),
+      radius: canopyRadius,
+      leafSize: leafSize,
     );
 
-    if (health > 0.38) {
-      _fruits(canvas, center: cc, count: 3, spread: 22, radius: 5);
+    if (vitality > 0.38) {
+      _fruits(canvas, center: cc, count: 3, spread: _scale(16, 28), radius: _scale(4, 6));
     }
 
     canvas.restore();
@@ -566,39 +600,44 @@ class LifeTreePainter extends CustomPainter {
   // ─────────────────────────────────────────────────────────────────────────
 
   void _drawMature(Canvas canvas, double cx, double groundY) {
-    const trunkH = 90.0;
+    final trunkH = _scale(70, 120);
+    final trunkW = _scale(11, 20);
 
     canvas.save();
     canvas.translate(cx, groundY - trunkH / 2);
     canvas.rotate(swayAngle * 0.48);
     canvas.translate(-cx, -(groundY - trunkH / 2));
 
-    _trunk(canvas, cx, groundY, trunkH, 15.0);
+    _trunk(canvas, cx, groundY, trunkH, trunkW);
 
-    // ৪ জোড়া ডাল
     for (int i = 0; i < 4; i++) {
       final t = 0.35 + i * 0.15;
       final a = 0.46 + i * 0.11;
+      final len = _scale(24, 48) - i * 5;
+      final w = _scale(4.0, 7.0) - i * 0.7;
       _branch(canvas,
         start: Offset(cx, groundY - trunkH * t),
-        angle: -(a) + _droop, len: 36.0 - i * 5, w: 5.2 - i * 0.7,
+        angle: -(a) + _droop, len: len, w: w,
       );
       _branch(canvas,
         start: Offset(cx, groundY - trunkH * t),
-        angle:   a  - _droop, len: 36.0 - i * 5, w: 5.2 - i * 0.7,
+        angle:   a  - _droop, len: len, w: w,
       );
     }
 
-    final cc = Offset(cx, groundY - trunkH - 34);
+    final cc = Offset(cx, groundY - trunkH - 28);
+    final canopyRadius = _scale(28, 52);
+    final leafSize = _scale(18, 34);
     _canopy(canvas,
-      center:   cc,
-      count:    (_density * 12).round().clamp(4, 12),
-      radius:   40, leafSize: 28,
+      center: cc,
+      count:  (_density * 12).round().clamp(4, 12),
+      radius: canopyRadius,
+      leafSize: leafSize,
     );
 
-    if (health > 0.56) {
-      _fruits(canvas,  center: cc, count: 6, spread: 32, radius: 6);
-      _flowers(canvas, center: cc, count: 5, spread: 26);
+    if (vitality > 0.56) {
+      _fruits(canvas, center: cc, count: 6, spread: _scale(24, 40), radius: _scale(5, 8));
+      _flowers(canvas, center: cc, count: 5, spread: _scale(20, 34));
     }
 
     canvas.restore();
@@ -609,58 +648,66 @@ class LifeTreePainter extends CustomPainter {
   // ─────────────────────────────────────────────────────────────────────────
 
   void _drawAncient(Canvas canvas, double cx, double groundY) {
-    const trunkH = 112.0;
+    final trunkH = _scale(90, 140);
+    final trunkW = _scale(15, 26);
 
     canvas.save();
     canvas.translate(cx, groundY - trunkH / 2);
     canvas.rotate(swayAngle * 0.30);
     canvas.translate(-cx, -(groundY - trunkH / 2));
 
-    _trunk(canvas, cx, groundY, trunkH, 19.0);
-    _rootFlares(canvas, cx, groundY, 19.0);
+    _trunk(canvas, cx, groundY, trunkH, trunkW);
+    _rootFlares(canvas, cx, groundY, trunkW);
 
-    // ৫ জোড়া ডাল
     for (int i = 0; i < 5; i++) {
       final t = 0.28 + i * 0.13;
       final a = 0.40 + i * 0.10;
+      final len = _scale(30, 56) - i * 5;
+      final w = _scale(5.0, 8.5) - i * 0.8;
       _branch(canvas,
         start: Offset(cx, groundY - trunkH * t),
-        angle: -(a) + _droop, len: 44.0 - i * 5, w: 6.0 - i * 0.8,
+        angle: -(a) + _droop, len: len, w: w,
       );
       _branch(canvas,
         start: Offset(cx, groundY - trunkH * t),
-        angle:   a  - _droop, len: 44.0 - i * 5, w: 6.0 - i * 0.8,
+        angle:   a  - _droop, len: len, w: w,
       );
     }
 
-    final cc = Offset(cx, groundY - trunkH - 42);
+    final cc = Offset(cx, groundY - trunkH - 38);
+    final canopyRadius = _scale(36, 66);
+    final leafSize = _scale(22, 42);
 
-    // পেছনের (গাঢ়) স্তর
+    // পেছনের স্তর
     _canopy(canvas,
-      center:          Offset(cx, cc.dy + 10),
-      count:           8, radius: 48, leafSize: 32,
-      colorOverride:   const Color(0xFF14532D),
-      hlOverride:      const Color(0xFF166534),
+      center: Offset(cx, cc.dy + 12),
+      count:  8,
+      radius: canopyRadius * 0.9,
+      leafSize: leafSize * 0.9,
+      colorOverride: const Color(0xFF14532D),
+      hlOverride:    const Color(0xFF166534),
     );
 
     // মূল স্তর
     _canopy(canvas,
-      center: cc, count: (_density * 14).round().clamp(5, 14),
-      radius: 44, leafSize: 30,
+      center: cc,
+      count:  (_density * 14).round().clamp(5, 14),
+      radius: canopyRadius,
+      leafSize: leafSize,
     );
 
     // উপরের উজ্জ্বল স্তর
     _canopy(canvas,
-      center:        Offset(cx, cc.dy - 16),
-      count:         (_density * 6).round().clamp(2, 7),
-      radius:        22, leafSize: 20,
+      center: Offset(cx, cc.dy - 18),
+      count:  (_density * 6).round().clamp(2, 7),
+      radius: canopyRadius * 0.55,
+      leafSize: leafSize * 0.7,
       colorOverride: _leafHighlight,
-      hlOverride:    Colors.white.withOpacity(0.35),
+      hlOverride: Colors.white.withOpacity(0.35),
     );
 
-    // সোনালি ফল + ফুল + তারা
-    _fruits(canvas,  center: cc, count: 9, spread: 38, radius: 7, glow: true);
-    _flowers(canvas, center: cc, count: 7, spread: 32);
+    _fruits(canvas, center: cc, count: 9, spread: _scale(30, 48), radius: _scale(6, 10), glow: true);
+    _flowers(canvas, center: cc, count: 7, spread: _scale(26, 42));
     _sparkles(canvas, cc);
 
     canvas.restore();
@@ -675,8 +722,6 @@ class LifeTreePainter extends CustomPainter {
       double h, double w) {
     final hW  = w / 2;
     final tW  = hW * 0.42; // উপরের অংশ সরু
-    final rect = Rect.fromLTWH(cx - hW, groundY - h, w, h);
-
     final path = Path()
       ..moveTo(cx - hW, groundY)
       ..cubicTo(cx - hW, groundY - h * 0.40,
@@ -699,7 +744,7 @@ class LifeTreePainter extends CustomPainter {
         ),
     );
 
-    // Highlight stripe (cylinder illusion)
+    // Highlight stripe
     canvas.drawPath(
       path,
       Paint()
@@ -727,7 +772,6 @@ class LifeTreePainter extends CustomPainter {
     }
   }
 
-  /// Root flares — গাছের গোড়ায় মোটা শিকড়
   void _rootFlares(Canvas canvas, double cx, double groundY, double trunkW) {
     for (final side in [-1.0, 1.0]) {
       final path = Path()
@@ -742,8 +786,6 @@ class LifeTreePainter extends CustomPainter {
     }
   }
 
-  /// Single bezier branch
-  /// angle = 0 → সোজা উপরে, positive → ডানে, negative → বামে
   void _branch(Canvas canvas, {
     required Offset start,
     required double angle,
@@ -752,7 +794,7 @@ class LifeTreePainter extends CustomPainter {
   }) {
     final end = Offset(
       start.dx + math.sin(angle) * len,
-      start.dy - math.cos(angle) * len,  // উপরে যাওয়ার জন্য বিয়োগ
+      start.dy - math.cos(angle) * len,
     );
     final ctrl = Offset(
       (start.dx + end.dx) / 2 + math.cos(angle) * 7,
@@ -771,7 +813,6 @@ class LifeTreePainter extends CustomPainter {
     );
   }
 
-  /// Canopy — গোল পাতার cluster
   void _canopy(Canvas canvas, {
     required Offset center,
     required int count,
@@ -825,7 +866,6 @@ class LifeTreePainter extends CustomPainter {
     );
   }
 
-  /// Oval leaf — Seedling stage-এ ব্যবহার হয়
   void _ovalLeaf(Canvas canvas, {
     required Offset center,
     required double w, required double h,
@@ -848,7 +888,6 @@ class LifeTreePainter extends CustomPainter {
         ),
     );
 
-    // Midrib
     canvas.drawLine(
       Offset(0, -h / 2 + 2), Offset(0, h / 2 - 2),
       Paint()
@@ -860,7 +899,6 @@ class LifeTreePainter extends CustomPainter {
     canvas.restore();
   }
 
-  /// Fruits — ফল আঁকে, bobbing animation সহ
   void _fruits(Canvas canvas, {
     required Offset center,
     required int    count,
@@ -899,7 +937,6 @@ class LifeTreePainter extends CustomPainter {
           ),
       );
 
-      // Stem
       canvas.drawLine(
         Offset(fx, fy + bob - radius),
         Offset(fx - 2, fy + bob - radius - 5),
@@ -912,7 +949,6 @@ class LifeTreePainter extends CustomPainter {
     }
   }
 
-  /// Flowers — ৫ পাপড়ির ফুল
   void _flowers(Canvas canvas, {
     required Offset center,
     required int    count,
@@ -929,7 +965,6 @@ class LifeTreePainter extends CustomPainter {
       final fy  = center.dy + math.sin(ang) * r * 0.58;
       final bob = math.sin(fruitPhase * math.pi * 2 + i * 1.5 + rB * 2) * 1.8;
 
-      // ৫টি পাপড়ি
       final petalP = Paint()
         ..color = fc.withOpacity(0.88)
         ..style = PaintingStyle.fill;
@@ -943,7 +978,6 @@ class LifeTreePainter extends CustomPainter {
         );
       }
 
-      // ফুলের মাঝখান
       canvas.drawCircle(
         Offset(fx, fy + bob), 2.8,
         Paint()..color = const Color(0xFFFDE68A),
@@ -951,14 +985,13 @@ class LifeTreePainter extends CustomPainter {
     }
   }
 
-  /// Sparkles — Ancient tree-এর তারাখচিত জ্যোতি
   void _sparkles(Canvas canvas, Offset center) {
     for (int i = 0; i < 8; i++) {
       final rA = _sparkleRng[i * 2];
       final rB = _sparkleRng[i * 2 + 1];
 
       final ang    = (i / 8) * math.pi * 2;
-      final r      = 44.0 + rA * 14;
+      final r      = _scale(30, 60) + rA * 14;
       final sx     = center.dx + math.cos(ang) * r;
       final sy     = center.dy + math.sin(ang) * r * 0.68;
       final blink  = ((math.sin(fruitPhase * math.pi * 2
@@ -974,7 +1007,6 @@ class LifeTreePainter extends CustomPainter {
         ..strokeCap   = StrokeCap.round
         ..style       = PaintingStyle.stroke;
 
-      // ৪টি বাহু
       for (int arm = 0; arm < 4; arm++) {
         final aa = arm * math.pi / 2;
         canvas.drawLine(
@@ -986,15 +1018,12 @@ class LifeTreePainter extends CustomPainter {
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // REPAINT GUARD — শুধু দরকারি হলেই repaint করে
-  // ─────────────────────────────────────────────────────────────────────────
-
   @override
   bool shouldRepaint(LifeTreePainter old) =>
-      old.health      != health      ||
-          old.swayAngle   != swayAngle   ||
-          old.pulseScale  != pulseScale  ||
-          old.fruitPhase  != fruitPhase  ||
-          old.growthScale != growthScale;
+      old.levelFactor   != levelFactor   ||
+          old.vitality      != vitality      ||
+          old.swayAngle     != swayAngle     ||
+          old.pulseScale    != pulseScale    ||
+          old.fruitPhase    != fruitPhase    ||
+          old.growthScale   != growthScale;
 }
