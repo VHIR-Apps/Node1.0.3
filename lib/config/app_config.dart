@@ -6,7 +6,7 @@ class AppConfig {
   const AppConfig._();
 
   static const String appName = 'Habit Node';
-  static const String appTagline = 'Track your daily habits easily';
+  static const String appTagline = 'Start from Zero, Grow like a Hero.';
   static const String logoPath = 'assets/images/logo.png';
   static const String version = '1.0.5';
   static const String buildNumber = '1';
